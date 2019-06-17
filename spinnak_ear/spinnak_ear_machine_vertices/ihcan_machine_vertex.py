@@ -39,7 +39,7 @@ import numpy
 from data_specification.constants import APP_PTR_TABLE_BYTE_SIZE
 
 
-class IHCANVertex(
+class IHCANMachineVertex(
         MachineVertex, AbstractHasAssociatedBinary,
         AbstractGeneratesDataSpecification,
         AbstractProvidesNKeysForPartition,
@@ -108,7 +108,7 @@ class IHCANVertex(
 
         self._num_data_points = n_fibres * drnl.n_data_points # num of points is double previous calculations due to 2 fibre output of IHCAN model
         if bitfield:
-            self._recording_size = numpy.ceil((self._num_data_points/8.) * self._KEY_ELEMENT_TYPE.size) # multiply number of bytes by 4 so we ensure recording works on spinnaker
+            self._recording_size = numpy.ceil((self._num_data_points/8.) * self._KEY_ELEMENT_TYPE.size)
         else:
             self._recording_size = self._num_data_points * self._DATA_ELEMENT_TYPE.size
         self._seed = seed
@@ -153,7 +153,7 @@ class IHCANVertex(
 
     @overrides(AbstractProvidesNKeysForPartition.get_n_keys_for_partition)
     def get_n_keys_for_partition(self, partition, graph_mapper):
-        return 2#4#for control IDs#TODO: change to n_fibres
+        return 4#for control IDs
 
     @overrides(AbstractHasProfileData.get_profile_data)
     def get_profile_data(self, transceiver, placement):
@@ -288,6 +288,8 @@ class IHCANVertex(
         """ Read back the spikes """
 
         # Read the data recorded
+        # data_values, _ = buffer_manager.get_data_for_vertex(placement, 0)
+        # data = data_values.read_all()
         data, _ = buffer_manager.get_data_by_placement(placement, 0)
 
         if self._bitfield:

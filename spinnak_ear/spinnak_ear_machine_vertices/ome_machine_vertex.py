@@ -34,26 +34,22 @@ from spinn_front_end_common.abstract_models\
 from enum import Enum
 import numpy
 import scipy.signal as sig
-from scipy.io import loadmat
 
 from spinn_utilities.progress_bar import ProgressBar
-from spinn_front_end_common.utilities import helpful_functions, constants
-from spinn_front_end_common.interface.profiling import profile_utils
-from spinn_front_end_common.utilities import globals_variables
+from spinn_front_end_common.utilities import constants
 from spinn_front_end_common.interface.profiling.abstract_has_profile_data \
     import AbstractHasProfileData
 from spinn_front_end_common.interface.profiling import profile_utils
 from spinn_front_end_common.interface.simulation import simulation_utilities
 from data_specification.constants import APP_PTR_TABLE_BYTE_SIZE
 
-class OMEVertex(
+
+class OMEMachineVertex(
         MachineVertex,
-        #ApplicationVertex,
         AbstractHasAssociatedBinary,
         AbstractGeneratesDataSpecification,
         AbstractProvidesNKeysForPartition,
-        AbstractHasProfileData
-        ):
+        AbstractHasProfileData):
     """ A vertex that runs the OME algorithm
     """
 
@@ -196,7 +192,7 @@ class OMEVertex(
 
     @overrides(AbstractProvidesNKeysForPartition.get_n_keys_for_partition)
     def get_n_keys_for_partition(self, partition, graph_mapper):
-        return 1#4 #for control IDs
+        return 4 #for control IDs
 
     @overrides(AbstractHasProfileData.get_profile_data)
     def get_profile_data(self, transceiver, placement):

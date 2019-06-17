@@ -3,7 +3,7 @@
 *.csv
 *.bin
 *.npy
-.idea
+/.idea
 *_local
 *_samples
 *.wav

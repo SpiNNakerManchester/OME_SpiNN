@@ -29,10 +29,9 @@ from spinn_front_end_common.abstract_models\
     import AbstractProvidesNKeysForPartition
 import numpy as np
 
-class ANGroupVertex(
+class ANGroupMachineVertex(
         MachineVertex, AbstractHasAssociatedBinary,
         AbstractGeneratesDataSpecification,
-        AbstractProvidesNKeysForPartition
         ):
     """ A vertex that runs the multi-cast acknowledge algorithm
     """
@@ -50,7 +49,7 @@ class ANGroupVertex(
                ('RECORDING', 2),
                ('PROFILE', 3)])
 
-    def __init__(self,child_vertices=[],max_n_atoms=256,is_final_row=False):
+    def __init__(self, child_vertices=[], max_n_atoms=256,is_final_row=False):
         """
         """
         MachineVertex.__init__(self, label="AN Group Node", constraints=None)
@@ -61,7 +60,7 @@ class ANGroupVertex(
         self._max_n_atoms = max_n_atoms
         self._is_final_row = is_final_row
 
-    def add_child_vertex(self,child):
+    def add_child_vertex(self, child):
         self._child_vertices.append(child)
 
     @property
@@ -166,7 +165,3 @@ class ANGroupVertex(
         # End the specification
         spec.end_specification()
 
-
-    @overrides(AbstractProvidesNKeysForPartition.get_n_keys_for_partition)
-    def get_n_keys_for_partition(self, partition, graph_mapper):
-        return self._n_atoms  # two for control IDs

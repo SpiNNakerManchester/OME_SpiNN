@@ -1,9 +1,8 @@
 import spinnaker_graph_front_end as g
 
-from OME_vertex import OMEVertex
-from DRNL_vertex import DRNLVertex
+from spinnak_ear.ome_machine_vertex import OMEMachineVertex
+from spinnak_ear.drnl_machine_vertex import DRNLMachineVertex
 from IHCAN_vertex import IHCANVertex
-from MCack_vertex import MCackVertex
 import model_binaries
 
 from pacman.model.constraints.placer_constraints\
@@ -63,7 +62,7 @@ def run_model(
     #OME is on ethernet chip for live streaming
     for chip in machine.ethernet_connected_chips:
         # create OME
-        ome = OMEVertex(data, fs, len(pole_freqs),rt=rt,profile=profile)
+        ome = OMEMachineVertex(data, fs, len(pole_freqs), rt=rt, profile=profile)
         g.add_machine_vertex_instance(ome)
         # constrain placement to local chip
         ome.add_constraint(ChipAndCoreConstraint(chip.x, chip.y))
@@ -81,7 +80,7 @@ def run_model(
             for i in range(n_drnl):
 
                 CF=pole_freqs[cf_index]
-                drnl=DRNLVertex(ome,CF,delays[cf_index],profile=profile)
+                drnl=DRNLMachineVertex(ome, CF, delays[cf_index], profile=profile)
                 g.add_machine_vertex_instance(drnl)
                 # constrain placement to local chip
                 drnl.add_constraint(ChipAndCoreConstraint(chip.x, chip.y))
@@ -165,7 +164,7 @@ def run_model(
                     #register this drnl instance to parent node list
                     mack.register_ack_processor(parent)
                 else:
-                    mack = MCackVertex(parent)
+                    mack = MCackMachineVertex(parent)
                     g.add_machine_vertex_instance(mack)
                     macks.append(mack)
 
