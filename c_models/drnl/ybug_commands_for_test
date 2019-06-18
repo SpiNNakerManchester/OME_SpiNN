@@ -1,0 +1,67 @@
+ybug commands need to run test application:
+
+/********single core sim************/
+
+app_load ../model_binaries/IHC_AN_float.aplx . 1 20
+sload load 0x606407f0 //0x606400e8
+app_sig all 20 sync0
+sdump dump 0x60640018 7D0 //c8
+
+app_stop 20
+
+/********full chip sim************/
+
+app_load ../model_binaries/IHC_AN_float.aplx . 1-17 20
+
+sload load1 0x606429c0
+sload load2 0x60648758
+sload load3 0x60645508
+sload load4 0x60641870
+sload load5 0x60648688
+sload load6 0x60641940
+sload load7 0x606490d0
+sload load8 0x60643be0
+sload load9 0x60646658
+sload load10 0x606417a0
+sload load11 0x60649270
+sload load12 0x60642a90
+sload load13 0x60649000
+sload load14 0x60644488
+sload load15 0x606455d8
+sload load16 0x60643b10
+sload load17 0x606491a0
+
+app_sig all 20 sync0
+
+sdump dump1 0x60641a10 7D0
+sdump dump2 0x60647eb0 7D0
+sdump dump3 0x60644558 7D0
+sdump dump4 0x60640fc8 7D0
+sdump dump5 0x60646f00 7D0
+sdump dump6 0x60640018 7D0
+sdump dump7 0x606476d8 7D0
+sdump dump8 0x60643338 7D0
+sdump dump9 0x606456a8 7D0
+sdump dump10 0x606407f0 7D0
+sdump dump11 0x60646728 7D0
+sdump dump12 0x606421e8 7D0
+sdump dump13 0x60645e80 7D0
+sdump dump14 0x60643cb0 7D0
+sdump dump15 0x60644d30 7D0
+sdump dump16 0x60642b60 7D0
+sdump dump17 0x60648828 7D0
+
+app_stop 20
+
+/********full board sim************/
+
+app_load ../model_binaries/IHC_AN_float.aplx all all 20
+
+
+
+/*******matlab import commands******/
+(rename file 'dump' to 'dump.bin' before importing)
+fileID = fopen('dump.bin');
+A = fread(fileID,'single');
+figure;plot(A)bootiobuf 1
+

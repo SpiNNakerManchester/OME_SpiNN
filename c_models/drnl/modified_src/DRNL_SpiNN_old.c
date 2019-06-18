@@ -1,3 +1,5 @@
+// DO NOT EDIT! THIS FILE WAS GENERATED FROM src/DRNL_SpiNN_old.c
+
 /*
  ============================================================================
  Name        : IHC_AN_softfloat.c
@@ -7,19 +9,18 @@
  Description : Hello World in C, Ansi-style
  ============================================================================
  */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdfix.h>
-#include "OME_SpiNN.h"
+//#include "startupValues.h"
+#include "DRNL_SpiNN.h"
 #include "spin1_api.h"
 #include "math.h"
 #include "complex.h"
 #include "random.h"
 #include "stdfix-exp.h"
 #include "log.h"
-#define TIMER_TICK_PERIOD 2300//REALTIME (2.3ms to process 100 44100Hz samples
-
+#define TIMER_TICK_PERIOD 23000//REALTIME (23ms to process 100 44100Hz samples
 #define TOTAL_TICKS 240//173//197       
 #define PROFILE
 //#define LOOP_PROFILE
@@ -37,16 +38,25 @@ uint processing;
 uint index_x;
 uint index_y;
 
-REAL conchaL,conchaH,conchaG,earCanalL,earCanalH,earCanalG,stapesH,stapesL,stapesScalar,
-	ARtau,ARdelay,ARrateThreshold,rateToAttenuationFactor,BFlength;
+REAL cf,nlin_b0,nlin_b1,nlin_b2,nlin_a1,nlin_a2,nlBWp,nlBWq,linBWp,linBWq,linCFp,linCFq,	nlin_bw,nlin_phi,nlin_theta,nlin_cos_theta,nlin_sin_theta,nlin_alpha,
 
-REAL concha_q,concha_j,concha_k,concha_l,conchaGainScalar,recip_conchaFilter_a0,
-	earCanal_q,earCanal_j,earCanal_k,earCanal_l,earCanalGainScalar,recip_earCanalFilter_a0,
-	ARatt,Wn,stapesHP_order,sf,stapesLP_b,stapes_tau,past_stapesDisp;
+lin_b0,lin_b1,lin_b2,lin_a1,lin_a2,lin_bw,lin_phi,lin_theta,lin_cos_theta,lin_sin_theta,lin_alpha,
+lin_gain,
 
-REAL conchaFilter_b[3],conchaFilter_a[3],earCanalFilter_b[3],earCanalFilter_a[3],stapesHP_b[3],stapesHP_a[3],stapesLP_a[2],past_input[2],past_concha[2],past_earCanalInput[2],past_earCanal[2],past_stapesInput[2]
-,past_stapes[2];
+a,ctBM,dispThresh,recip_ctBM,compressedNonlin,MOC;
+//ctBM,dispThresh;
 
+accum c;
+
+REAL complex lin_z1,lin_z2,lin_z3,lin_tf,nlin_z1,nlin_z2,nlin_z3,nlin_tf;
+
+REAL lin_x1[2],lin_x2[2];
+REAL lin_y1[2],lin_y2[2];
+
+REAL nlin_x1a[2],nlin_x2a[2];
+REAL nlin_y1a[2],nlin_y2a[2];
+REAL nlin_x1b[2],nlin_x2b[2];
+REAL nlin_y1b[2],nlin_y2b[2];
 
 //uint seed_selection[SEED_SEL_SIZE];//TODO:this needs to be moved to SDRAM
 
@@ -67,6 +77,7 @@ REAL *dtcm_profile_buffer;
 REAL *sdramin_buffer;
 REAL *sdramout_buffer;
 REAL *profile_buffer;
+
 
 //application initialisation
 void app_init(void)
@@ -157,82 +168,90 @@ void app_init(void)
 	}
 	
 	//============MODEL INITIALISATION================//
-	BFlength=1.0;//TODO change this to input parameter
 
-	conchaL=1500.0;
-	conchaH=3000.0;
-	conchaG=5.0;
-	earCanalL=3000.0;
-	earCanalH=3800;
-	earCanalG=5.0;
-	stapesH=700.0;
-	stapesL=10.0;
-	stapesScalar=5e-7;
-	ARtau=0.2;
-	ARdelay=0.0085;
-	ARrateThreshold=100.0;
-	rateToAttenuationFactor=0.1/BFlength;
+	//set center frequency TODO:change to a model input parameter
+	cf=1000.0;
 
-	concha_q= PI * dt * (conchaH - conchaL);
-	concha_j= 1.0/(1.0+ (1.0/tan(concha_q)));
-	concha_k= (2.0 * cos(PI * dt * (conchaH + conchaL))) / ((1.0 + tan(concha_q)) * cos(concha_q));
-	concha_l= (tan(concha_q) - 1.0)/(tan(concha_q) + 1.0);
-	conchaGainScalar=pow(10.0,conchaG/20.0);
+	//non-linear pathway
+	nlBWq=180.0;
+	nlBWp=0.14;
+	nlin_bw=nlBWp * cf + nlBWq;
+	nlin_phi=2.0 * (REAL)PI * nlin_bw * dt;
+	nlin_theta= 2.0 * (REAL)PI * cf * dt;
+	nlin_cos_theta= cos(nlin_theta);
+	nlin_sin_theta= sin(nlin_theta);
+	nlin_alpha= -exp(-nlin_phi) * nlin_cos_theta;
+	nlin_a1= 2.0 * nlin_alpha;
+	nlin_a2= exp(-2.0 * nlin_phi);
+	nlin_z1 = (1.0 + nlin_alpha * nlin_cos_theta) - (nlin_alpha * nlin_sin_theta) * _Complex_I;
+	nlin_z2 = (1.0 + nlin_a1 * nlin_cos_theta) - (nlin_a1 * nlin_sin_theta) * _Complex_I;
+	nlin_z3 = (nlin_a2 * cos(2.0 * nlin_theta)) - (nlin_a2 * sin(2.0 * nlin_theta)) * _Complex_I;
+	nlin_tf = (nlin_z2 + nlin_z3) / nlin_z1;
+	nlin_b0 = cabsf(nlin_tf);
+	nlin_b1 = nlin_alpha * nlin_b0;
 
-	conchaFilter_b[0]=concha_j;
-	conchaFilter_b[1]=0.0;
-	conchaFilter_b[2]=-concha_j;
-	conchaFilter_a[0]=1.0;
-	conchaFilter_a[1]=-concha_k;
-	conchaFilter_a[2]=-concha_l;
-	recip_conchaFilter_a0=1.0/conchaFilter_a[0];
+	//compression algorithm variables
+	a=5e4;
+	c=0.25k;
+	ctBM=3.981071705534974e-08;
+	recip_ctBM=1.0/ctBM;
+	dispThresh=ctBM/a;
 
-	earCanal_q= PI * dt * (earCanalH - earCanalL);
-	earCanal_j= 1.0/(1.0+ (1.0/tan(earCanal_q)));
-	earCanal_k= (2.0 * cos(PI * dt * (earCanalH + earCanalL))) / ((1.0 + tan(earCanal_q)) * cos(earCanal_q));
-	earCanal_l= (tan(earCanal_q) - 1.0)/(tan(earCanal_q) + 1.0);
-	earCanalGainScalar=pow(10.0,earCanalG/20.0);
+	//linear pathway
+	lin_gain=200.0;
+	linBWq=235.0;
+	linBWp=0.2;
+	lin_bw=linBWp * cf + linBWq;
+	lin_phi=2.0 * (REAL)PI * lin_bw * dt;
+	lin_theta= 2.0 * (REAL)PI * cf * dt;
+	lin_cos_theta= cos(lin_theta);
+	lin_sin_theta= sin(lin_theta);
+	lin_alpha= -exp(-lin_phi) * lin_cos_theta;
+	lin_a1= 2.0 * lin_alpha;
+	lin_a2= exp(-2.0 * lin_phi);
+	lin_z1 = (1.0 + lin_alpha * lin_cos_theta) - (lin_alpha * lin_sin_theta) * _Complex_I;
+	lin_z2 = (1.0 + lin_a1 * lin_cos_theta) - (lin_a1 * lin_sin_theta) * _Complex_I;
+	lin_z3 = (lin_a2 * cos(2.0 * lin_theta)) - (lin_a2 * sin(2.0 * lin_theta)) * _Complex_I;
+	lin_tf = (lin_z2 + lin_z3) / lin_z1;
+	lin_b0 = cabsf(lin_tf);
+	lin_b1 = lin_alpha * lin_b0;
 
-	earCanalFilter_b[0]=earCanal_j;
-	earCanalFilter_b[1]=0.0;
-	earCanalFilter_b[2]=-earCanal_j;
-	earCanalFilter_a[0]=1.0;
-	earCanalFilter_a[1]=-earCanal_k;
-	earCanalFilter_a[2]=-earCanal_l;
-	recip_earCanalFilter_a0=1.0/earCanalFilter_a[0];
+	//starting values
+	lin_x1[0]=0.0;
+	lin_x1[1]=0.0;
+	lin_y1[0]=0.0;
+	lin_y1[1]=0.0;
+	
+	lin_x2[0]=0.0;
+	lin_x2[1]=0.0;
+	lin_y2[0]=0.0;
+	lin_y2[1]=0.0;	
 
-	//stapes filter coeffs hard coded due to butterworth calc code overflow
-	//N.B. these will need to be altered if Fs is changed!!!
-	stapesHP_b[0] = 0.931905;
-	stapesHP_b[1] = -1.863809;
-	stapesHP_b[2] = 0.931905;
-	stapesHP_a[0] = 1.0;
-	stapesHP_a[1] = -1.859167;
-	stapesHP_a[2] = 0.868451;
+	nlin_x1a[0]=0.0;
+	nlin_x1a[1]=0.0;
+	nlin_y1a[0]=0.0;
+	nlin_y1a[1]=0.0;
 
-	stapes_tau= 1.0/ (2 * PI * stapesL);
-	stapesLP_a[0]= 1.0;
-	stapesLP_a[1]= dt/stapes_tau -1.0;
-	stapesLP_b= 1.0 + stapesLP_a[1];
+	compressedNonlin=0.0;
+	
+	nlin_x2a[0]=0.0;
+	nlin_x2a[1]=0.0;
+	nlin_y2a[0]=0.0;
+	nlin_y2a[1]=0.0;
 
-	past_input[0]=0.0;
-	past_input[1]=0.0;
-	past_concha[0]=0.0;
-	past_concha[1]=0.0;
+	nlin_x1b[0]=0.0;
+	nlin_x1b[1]=0.0;
+	nlin_y1b[0]=0.0;
+	nlin_y1b[1]=0.0;
+	
+	nlin_x2b[0]=0.0;
+	nlin_x2b[1]=0.0;
+	nlin_y2b[0]=0.0;
+	nlin_y2b[1]=0.0;
 
-	past_earCanalInput[0]=0.0;
-	past_earCanalInput[1]=0.0;
-	past_earCanal[0]=0.0;
-	past_earCanal[1]=0.0;
+	MOC=1.0; // TODO change this to be a model input	
 
-	ARatt=1.0; //TODO: change this to be determined by spiking input
-
-	past_stapesInput[0]=0.0;
-	past_stapesInput[1]=0.0;
-	past_stapes[0]=0.0;
-	past_stapes[1]=0.0;
-
-	past_stapesDisp=0.0;		
+	
 
 #ifdef PROFILE
     // configure timer 2 for profiling
@@ -331,7 +350,8 @@ uint process_chan(REAL *out_buffer,REAL *in_buffer)
 	uint i,j,k;
 		
 	uint si=0;
-	REAL concha,earCanalInput,earCanalRes,earCanalOutput,ARoutput,stapesVelocity,stapesDisplacement;
+	REAL linout1,linout2,nonlinout1a,nonlinout2a,nonlinout1b,nonlinout2b,abs_x,sign;
+	accum accum_comp;
 		
 #ifdef PRINT
 	io_printf (IO_BUF, "[core %d] segment %d (offset=%d) starting processing\n", coreID,seg_index,segment_offset);
@@ -339,59 +359,107 @@ uint process_chan(REAL *out_buffer,REAL *in_buffer)
 	
 	for(i=0;i<SEGSIZE;i++)
 	{
-		//concha
-		concha= (conchaFilter_b[0]*in_buffer[i]
-			+ conchaFilter_b[1]*past_input[0]
-			+ conchaFilter_b[2]*past_input[1]
-			- conchaFilter_a[1]*past_concha[0]
-			- conchaFilter_a[2]*past_concha[1]) * recip_conchaFilter_a0;
-		//update vars		
-		past_input[1]=past_input[0];
-		past_input[0]=in_buffer[i];
+	/*	#ifdef PROFILE
+		if(i==0)
+		{
+		  start_count_process = tc[T2_COUNT];
+		}
+		#endif*/
 
-		past_concha[1]=past_concha[0];
-		past_concha[0]=concha;
+		//Linear Path
+		lin_x1[1]= in_buffer[i];	
+		linout1= lin_b0 * lin_x1[1] + lin_b1 * lin_x1[0] - 
+				lin_a1 * lin_y1[1] - lin_a2 * lin_y1[0];
+		
+		lin_x1[0]= lin_x1[1];
+		lin_y1[0]=lin_y1[1];
+		lin_y1[1]=linout1;
 
-		earCanalInput= conchaGainScalar* concha + in_buffer[i];
+		//lin_x2[0]= lin_x2[1];
+		//lin_x2[1]= linout1;		
+		
+		//linout2= lin_b0 * lin_x2[1] + lin_b1 * lin_x2[0] - 
+		//		lin_a1 * lin_y2[1] - lin_a2 * lin_y2[0];
+		linout2= lin_b0 * lin_y1[1] + lin_b1 * lin_y1[0] - 
+				lin_a1 * lin_y2[1] - lin_a2 * lin_y2[0];
+		
+		lin_y2[0]= lin_y2[1];
+		lin_y2[1]= linout2;
 
-		//ear canal
-		earCanalRes= (earCanalFilter_b[0]*earCanalInput
-				+ earCanalFilter_b[1]*past_earCanalInput[0]
-				+ earCanalFilter_b[2]*past_earCanalInput[1]
-				- earCanalFilter_a[1]*past_earCanal[0]
-				- earCanalFilter_a[2]*past_earCanal[1]) * recip_earCanalFilter_a0;
-		//update vars	
-		past_earCanalInput[1]=past_earCanalInput[0];
-		past_earCanalInput[0]=earCanalInput;
-	
-		past_earCanal[1]=past_earCanal[0];
-		past_earCanal[0]=earCanalRes;
+		//non-linear path
+		//stage 1
+		nlin_x1a[1]= in_buffer[i];
+		nonlinout1a= nlin_b0 * nlin_x1a[1] + nlin_b1 * nlin_x1a[0] - 
+				nlin_a1 * nlin_y1a[1] - nlin_a2 * nlin_y1a[0];
 
-		earCanalOutput= earCanalGainScalar * earCanalRes + earCanalInput;
+		nlin_x1a[0]= nlin_x1a[1];
+		nlin_y1a[0]=nlin_y1a[1];
+		nlin_y1a[1]=nonlinout1a;
 
-		//AR
-		ARoutput= ARatt * stapesScalar * earCanalOutput;
+		//nlin_x2a[0]= nlin_x2a[1];
+		//nlin_x2a[1]= nonlinout1a;
 
-		//stapes velocity
-		stapesVelocity= stapesHP_b[0] * ARoutput + 
-				stapesHP_b[1] * past_stapesInput[0] + 
-				stapesHP_b[2] * past_stapesInput[1] 
-				- stapesHP_a[1] * past_stapes[0]
-				- stapesHP_a[2] * past_stapes[1];
-		//update vars
-		past_stapesInput[1]= past_stapesInput[0];
-		past_stapesInput[0]= ARoutput;
-		past_stapes[1]= past_stapes[0];
-		past_stapes[0]= stapesVelocity;
+		//nonlinout2a= nlin_b0 * nlin_x2a[1] + nlin_b1 * nlin_x2a[0] - 
+		//		nlin_a1 * nlin_y2a[1] - nlin_a2 * nlin_y2a[0];
+		nonlinout2a= nlin_b0 * nlin_y1a[1] + nlin_b1 * nlin_y1a[0] - 
+				nlin_a1 * nlin_y2a[1] - nlin_a2 * nlin_y2a[0];
+		nlin_y2a[0]= nlin_y2a[1];
+		nlin_y2a[1]= nonlinout2a;
 
-		//stapes displacement
-		stapesDisplacement= stapesLP_b * stapesVelocity - stapesLP_a[1] * past_stapesDisp;
-		//update vars
-		past_stapesDisp=stapesDisplacement;	
+	/*	#ifdef PROFILE
+		if(i==0)
+		{
+			  end_count_process = tc[T2_COUNT];
+			  dtcm_profile_buffer[1+((seg_index-1)*3)]=start_count_process-end_count_process;
+		}
+		#endif	*/
+		
+		//MOC efferent effects
+		nonlinout2a*=MOC;
+		
+		//stage 2
+		abs_x= ABS(nonlinout2a);
+
+		if(abs_x<dispThresh)
+		{			
+			compressedNonlin= a * nonlinout2a;
+		}
+		else if(abs_x>0.0)//compress
+		{	
+			sign= SIGN(nonlinout2a);
+			compressedNonlin= sign * ctBM * (REAL)expk(c * logk((accum)a*abs_x*recip_ctBM));
+			//compressedNonlin= sign * ctBM * exp(c * log(a * abs_x * recip_ctBM));
+		}	
+		else
+		{
+			compressedNonlin=0.0;
+		}			
+
+		//stage 3 
+		nlin_x1b[1]= compressedNonlin;//nonlinout2a;//
+		nonlinout1b= nlin_b0 * nlin_x1b[1] + nlin_b1 * nlin_x1b[0] -
+				 nlin_a1 * nlin_y1b[1] - nlin_a2 * nlin_y1b[0];
+
+		nlin_x1b[0]= nlin_x1b[1];
+		nlin_y1b[0]=nlin_y1b[1];
+		nlin_y1b[1]=nonlinout1b;
+
+		//nlin_x2b[0]= nlin_x2b[1];
+		//nlin_x2b[1]= nonlinout1b;
+
+		//nonlinout2b= nlin_b0 * nlin_x2b[1] + nlin_b1 * nlin_x2b[0] - 
+		//		nlin_a1 * nlin_y2b[1] - nlin_a2 * nlin_y2b[0];
+
+		nonlinout2b= nlin_b0 * nlin_y1b[1] + nlin_b1 * nlin_y1b[0] - 
+				nlin_a1 * nlin_y2b[1] - nlin_a2 * nlin_y2b[0];
+
+		nlin_y2b[0]= nlin_y2b[1];
+		nlin_y2b[1]= nonlinout2b;
+
 	
 		//save to buffer
-		out_buffer[i]=stapesDisplacement;
-		//out_buffer[i]=stapesVelocity;//nlin_b0;//nonlinout1a;//nonlinout2b;//linout1;//nonlinout1a;
+		out_buffer[i]=linout2*lin_gain + nonlinout2b;
+		//out_buffer[i]=compressedNonlin;//nlin_b0;//nonlinout1a;//nonlinout2b;//linout1;//nonlinout1a;
 	}
 		
 	return segment_offset;

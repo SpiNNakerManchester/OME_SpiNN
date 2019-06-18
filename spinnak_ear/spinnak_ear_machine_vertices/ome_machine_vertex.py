@@ -266,7 +266,7 @@ class OMEMachineVertex(
         spec.write_value(
             len(self._drnl_vertices), data_type=self._COREID_TYPE)
 
-        # Write number of macks
+        # Write number of macks #TODO DELETE
         spec.write_value(
             len(self._mack_vertices), data_type = self._COREID_TYPE)
 

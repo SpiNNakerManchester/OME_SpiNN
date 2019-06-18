@@ -1,3 +1,5 @@
+// DO NOT EDIT! THIS FILE WAS GENERATED FROM src/DRNL_SpiNN.c
+
 /*
  ============================================================================
  Name        : IHC_AN_softfloat.c
@@ -7,22 +9,18 @@
  Description : Hello World in C, Ansi-style
  ============================================================================
  */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdfix.h>
-#include "OME_SpiNN.h"
+#include "DRNL_SpiNN.h"
 #include "spin1_api.h"
 #include "math.h"
 #include "complex.h"
 #include "random.h"
 #include "stdfix-exp.h"
 #include "log.h"
-#include <data_specification.h>
-
-#define TIMER_TICK_PERIOD 2600//2300//REALTIME (2.3ms to process 100 44100Hz samples
-
-//#define TOTAL_TICKS 62//240//173//197
+#define TIMER_TICK_PERIOD 2600//2300//REALTIME (23ms to process 100 44100Hz samples TODO: make this dependent on numfibres
+#define TOTAL_TICKS 240//173//197       
 #define PROFILE
 //#define LOOP_PROFILE
 //#define PRINT
@@ -38,18 +36,26 @@ uint write_switch;
 uint processing;
 uint index_x;
 uint index_y;
-uint TOTAL_TICKS;
 
-REAL conchaL,conchaH,conchaG,earCanalL,earCanalH,earCanalG,stapesH,stapesL,stapesScalar,
-	ARtau,ARdelay,ARrateThreshold,rateToAttenuationFactor,BFlength;
+REAL cf,nlin_b0,nlin_b1,nlin_b2,nlin_a1,nlin_a2,nlBWp,nlBWq,linBWp,linBWq,linCFp,linCFq,	nlin_bw,nlin_phi,nlin_theta,nlin_cos_theta,nlin_sin_theta,nlin_alpha,
 
-REAL concha_q,concha_j,concha_k,concha_l,conchaGainScalar,recip_conchaFilter_a0,
-	earCanal_q,earCanal_j,earCanal_k,earCanal_l,earCanalGainScalar,recip_earCanalFilter_a0,
-	ARatt,Wn,stapesHP_order,sf,stapesLP_b,stapes_tau,past_stapesDisp;
+lin_b0,lin_b1,lin_b2,lin_a1,lin_a2,lin_bw,lin_phi,lin_theta,lin_cos_theta,lin_sin_theta,lin_alpha,
+lin_gain,
 
-REAL conchaFilter_b[3],conchaFilter_a[3],earCanalFilter_b[3],earCanalFilter_a[3],stapesHP_b[3],stapesHP_a[3],stapesLP_a[2],past_input[2],past_concha[2],past_earCanalInput[2],past_earCanal[2],past_stapesInput[2]
-,past_stapes[2];
+a,ctBM,dispThresh,recip_ctBM,compressedNonlin,MOC;
+//ctBM,dispThresh;
 
+accum c;
+
+REAL complex lin_z1,lin_z2,lin_z3,lin_tf,nlin_z1,nlin_z2,nlin_z3,nlin_tf;
+
+REAL lin_x1;
+REAL lin_y1[2],lin_y2[2];
+
+REAL nlin_x1a;
+REAL nlin_y1a[2],nlin_y2a[2];
+REAL nlin_x1b;
+REAL nlin_y1b[2],nlin_y2b[2];
 
 //uint seed_selection[SEED_SEL_SIZE];//TODO:this needs to be moved to SDRAM
 
@@ -59,8 +65,6 @@ int start_count_read;
 int end_count_read;
 int start_count_write;
 int end_count_write;
-
-uint sync_count=0;
 
 
 REAL *dtcm_buffer_a;
@@ -73,27 +77,6 @@ REAL *sdramin_buffer;
 REAL *sdramout_buffer;
 REAL *profile_buffer;
 
-// The parameters to be read from memory
-enum params {
-    DATA_SIZE = 0,
-    COREID,
-    NUM_DRNL,
-    KEY,
-    DATA
-    };
-
-// The size of the remaining data to be sent
-uint data_size;
-// Pointer to the start of the data still to be sent and confirmed
-//REAL *data;
-// The mask which indicates the sequence number
-uint sequence_mask;
-// the core ID given by the placement software
-uint placement_coreID;
-
-uint key;
-
-uint num_drnls;
 
 //application initialisation
 void app_init(void)
@@ -108,50 +91,23 @@ void app_init(void)
 	
 	io_printf (IO_BUF, "[core %d] -----------------------\n", coreID);
 	io_printf (IO_BUF, "[core %d] starting simulation\n", coreID);
-
-	//obtain data spec
-
-	address_t data_address = data_specification_get_data_address();
-    address_t params = data_specification_get_region(0, data_address);
-
-    // Get the size of the data in words
-    data_size = params[DATA_SIZE];
-    TOTAL_TICKS= data_size/SEGSIZE;
-    log_info("data_size=%d",data_size);
-    log_info("TOTAL_TICKS=%d",TOTAL_TICKS);
-
-    // Get a pointer to the data - not worth copying at present
-    sdramin_buffer = (REAL *) &(params[DATA]);
-
-    //obtain this core ID from the host placement perspective
-    placement_coreID = params[COREID];
-
-    // Get the key to send the data with
-    key = params[KEY];
-    io_printf (IO_BUF, "OME-->DRNL key=%d\n",key);
-
-    //Get number of child DRNL vertices
-    num_drnls=params[NUM_DRNL];
-    io_printf (IO_BUF, "num drnls=%d\n",num_drnls);
-
-
+	
 	// Allocate buffers somewhere in SDRAM
-
 	
 	//output results buffer
 	sdramout_buffer = (REAL *) sark_xalloc (sv->sdram_heap,
-					 data_size * sizeof(REAL),
-					 placement_coreID,
-					 ALLOC_LOCK);
+					 MAX_SIGNAL_S*(uint)44100. * sizeof(REAL),
+					 coreID,
+					 ALLOC_LOCK);	
 
-	/*sdramin_buffer = (REAL *) sark_xalloc (sv->sdram_heap,
+	sdramin_buffer = (REAL *) sark_xalloc (sv->sdram_heap,
 					MAX_SIGNAL_S*(uint)44100. *sizeof(REAL),
 					coreID|32,
-					ALLOC_LOCK);*/
+					ALLOC_LOCK);
 	
 	profile_buffer = (REAL *) sark_xalloc (sv->sdram_heap,
 					3 * ((uint)44100./SEGSIZE) *sizeof(REAL),
-					placement_coreID|64,
+					coreID|64,
 					ALLOC_LOCK);
 	
 	// and a buffer in DTCM
@@ -191,7 +147,7 @@ void app_init(void)
 		}
 		for (uint i=0;i<MAX_SIGNAL_S * (uint)44100.;i++)
 		{
-		//	sdramin_buffer[i]  = 0;
+			sdramin_buffer[i]  = 0;
 		}
 		
 		for (uint i=0;i<3 * TOTAL_TICKS;i++)
@@ -199,9 +155,6 @@ void app_init(void)
 			dtcm_profile_buffer[i]  = 0;
 			profile_buffer[i]  = 0;
 		}
-
-        io_printf (IO_BUF, "[core %d] data spec output buffer tag= %d\n", coreID,
-           (uint) placement_coreID);
 		
 		io_printf (IO_BUF, "[core %d] dtcm buffer a @ 0x%08x\n", coreID,
 				   (uint) dtcm_buffer_a);
@@ -214,82 +167,81 @@ void app_init(void)
 	}
 	
 	//============MODEL INITIALISATION================//
-	BFlength=1.0;//TODO change this to input parameter
 
-	conchaL=1500.0;
-	conchaH=3000.0;
-	conchaG=5.0;
-	earCanalL=3000.0;
-	earCanalH=3800;
-	earCanalG=5.0;
-	stapesH=700.0;
-	stapesL=10.0;
-	stapesScalar=5e-7;
-	ARtau=0.2;
-	ARdelay=0.0085;
-	ARrateThreshold=100.0;
-	rateToAttenuationFactor=0.1/BFlength;
+	//set center frequency TODO:change cf to a model instance input parameter
+	cf=1000.0;
 
-	concha_q= PI * dt * (conchaH - conchaL);
-	concha_j= 1.0/(1.0+ (1.0/tan(concha_q)));
-	concha_k= (2.0 * cos(PI * dt * (conchaH + conchaL))) / ((1.0 + tan(concha_q)) * cos(concha_q));
-	concha_l= (tan(concha_q) - 1.0)/(tan(concha_q) + 1.0);
-	conchaGainScalar=pow(10.0,conchaG/20.0);
+	//non-linear pathway
+	nlBWq=180.0;
+	nlBWp=0.14;
+	nlin_bw=nlBWp * cf + nlBWq;
+	nlin_phi=2.0 * (REAL)PI * nlin_bw * dt;
+	nlin_theta= 2.0 * (REAL)PI * cf * dt;
+	nlin_cos_theta= cos(nlin_theta);
+	nlin_sin_theta= sin(nlin_theta);
+	nlin_alpha= -exp(-nlin_phi) * nlin_cos_theta;
+	nlin_a1= 2.0 * nlin_alpha;
+	nlin_a2= exp(-2.0 * nlin_phi);
+	nlin_z1 = (1.0 + nlin_alpha * nlin_cos_theta) - (nlin_alpha * nlin_sin_theta) * _Complex_I;
+	nlin_z2 = (1.0 + nlin_a1 * nlin_cos_theta) - (nlin_a1 * nlin_sin_theta) * _Complex_I;
+	nlin_z3 = (nlin_a2 * cos(2.0 * nlin_theta)) - (nlin_a2 * sin(2.0 * nlin_theta)) * _Complex_I;
+	nlin_tf = (nlin_z2 + nlin_z3) / nlin_z1;
+	nlin_b0 = cabsf(nlin_tf);
+	nlin_b1 = nlin_alpha * nlin_b0;
 
-	conchaFilter_b[0]=concha_j;
-	conchaFilter_b[1]=0.0;
-	conchaFilter_b[2]=-concha_j;
-	conchaFilter_a[0]=1.0;
-	conchaFilter_a[1]=-concha_k;
-	conchaFilter_a[2]=-concha_l;
-	recip_conchaFilter_a0=1.0/conchaFilter_a[0];
+	//compression algorithm variables
+	a=5e4;
+	c=0.25k;
+	ctBM=3.981071705534974e-08;
+	recip_ctBM=1.0/ctBM;
+	dispThresh=ctBM/a;
 
-	earCanal_q= PI * dt * (earCanalH - earCanalL);
-	earCanal_j= 1.0/(1.0+ (1.0/tan(earCanal_q)));
-	earCanal_k= (2.0 * cos(PI * dt * (earCanalH + earCanalL))) / ((1.0 + tan(earCanal_q)) * cos(earCanal_q));
-	earCanal_l= (tan(earCanal_q) - 1.0)/(tan(earCanal_q) + 1.0);
-	earCanalGainScalar=pow(10.0,earCanalG/20.0);
+	//linear pathway
+	lin_gain=200.0;
+	linBWq=235.0;
+	linBWp=0.2;
+	lin_bw=linBWp * cf + linBWq;
+	lin_phi=2.0 * (REAL)PI * lin_bw * dt;
+	lin_theta= 2.0 * (REAL)PI * cf * dt;
+	lin_cos_theta= cos(lin_theta);
+	lin_sin_theta= sin(lin_theta);
+	lin_alpha= -exp(-lin_phi) * lin_cos_theta;
+	lin_a1= 2.0 * lin_alpha;
+	lin_a2= exp(-2.0 * lin_phi);
+	lin_z1 = (1.0 + lin_alpha * lin_cos_theta) - (lin_alpha * lin_sin_theta) * _Complex_I;
+	lin_z2 = (1.0 + lin_a1 * lin_cos_theta) - (lin_a1 * lin_sin_theta) * _Complex_I;
+	lin_z3 = (lin_a2 * cos(2.0 * lin_theta)) - (lin_a2 * sin(2.0 * lin_theta)) * _Complex_I;
+	lin_tf = (lin_z2 + lin_z3) / lin_z1;
+	lin_b0 = cabsf(lin_tf);
+	lin_b1 = lin_alpha * lin_b0;
 
-	earCanalFilter_b[0]=earCanal_j;
-	earCanalFilter_b[1]=0.0;
-	earCanalFilter_b[2]=-earCanal_j;
-	earCanalFilter_a[0]=1.0;
-	earCanalFilter_a[1]=-earCanal_k;
-	earCanalFilter_a[2]=-earCanal_l;
-	recip_earCanalFilter_a0=1.0/earCanalFilter_a[0];
+	//starting values
+	lin_x1=0.0;
+	lin_y1[0]=0.0;
+	lin_y1[1]=0.0;
+	
+	lin_y2[0]=0.0;
+	lin_y2[1]=0.0;	
 
-	//stapes filter coeffs hard coded due to butterworth calc code overflow
-	//N.B. these will need to be altered if Fs is changed!!!
-	stapesHP_b[0] = 0.931905;
-	stapesHP_b[1] = -1.863809;
-	stapesHP_b[2] = 0.931905;
-	stapesHP_a[0] = 1.0;
-	stapesHP_a[1] = -1.859167;
-	stapesHP_a[2] = 0.868451;
+	nlin_x1a=0.0;
+	nlin_y1a[0]=0.0;
+	nlin_y1a[1]=0.0;
 
-	stapes_tau= 1.0/ (2 * PI * stapesL);
-	stapesLP_a[0]= 1.0;
-	stapesLP_a[1]= dt/stapes_tau -1.0;
-	stapesLP_b= 1.0 + stapesLP_a[1];
+	compressedNonlin=0.0;
+	
+	nlin_y2a[0]=0.0;
+	nlin_y2a[1]=0.0;
 
-	past_input[0]=0.0;
-	past_input[1]=0.0;
-	past_concha[0]=0.0;
-	past_concha[1]=0.0;
+	nlin_x1b=0.0;
+	nlin_y1b[0]=0.0;
+	nlin_y1b[1]=0.0;
+	
+	nlin_y2b[0]=0.0;
+	nlin_y2b[1]=0.0;
 
-	past_earCanalInput[0]=0.0;
-	past_earCanalInput[1]=0.0;
-	past_earCanal[0]=0.0;
-	past_earCanal[1]=0.0;
+	MOC=1.0; // TODO change this to be a model input	
 
-	ARatt=1.0; //TODO: change this to be determined by spiking input
-
-	past_stapesInput[0]=0.0;
-	past_stapesInput[1]=0.0;
-	past_stapes[0]=0.0;
-	past_stapes[1]=0.0;
-
-	past_stapesDisp=0.0;		
+	
 
 #ifdef PROFILE
     // configure timer 2 for profiling
@@ -333,16 +285,6 @@ void data_write(uint null_a, uint null_b)
 	}
 }
 
-void app_end(uint null_a,uint null_b)
-{
-   log_info("All data has been sent and confirmed seg_index=%d",seg_index);
-    while (!spin1_send_mc_packet(key, 1, WITH_PAYLOAD)) {
-        spin1_delay_us(1);
-    }
-    spin1_exit(0);
-    io_printf (IO_BUF, "spinn_exit\n");
-}
-
 //DMA read
 void data_read(uint ticks, uint null)
 {
@@ -351,16 +293,9 @@ void data_read(uint ticks, uint null)
 #endif
 
 	REAL *dtcm_buffer_in;
-	if(test_DMA == TRUE && sync_count<num_drnls && seg_index==0)
-	{
-        //send ready to send MC packet
-	    while (!spin1_send_mc_packet(key, 3, WITH_PAYLOAD)) {
-            spin1_delay_us(1);
-        }
 
-	}
 	//read from DMA and copy into DTCM
-	else if(ticks<=TOTAL_TICKS && test_DMA == TRUE && sync_count==num_drnls)
+	if(test_DMA == TRUE)
 	{
 		//assign recieve buffer
 		if(!read_switch)	
@@ -390,87 +325,104 @@ void data_read(uint ticks, uint null)
 	}
 	
 	// stop if desired number of ticks reached
-	else if (ticks > TOTAL_TICKS && sync_count==num_drnls)
+	if (ticks > TOTAL_TICKS) 
 	{
-        spin1_schedule_callback(app_end,NULL,NULL,2);
- /*       log_info("All data has been sent and confirmed seg_index=%d",seg_index);
-        while (!spin1_send_mc_packet(key, 1, WITH_PAYLOAD)) {
-            spin1_delay_us(1);
-        }
-        spin1_exit(0);
-        io_printf (IO_BUF, "spinn_exit\n");*/
+		io_printf (IO_BUF, "spinn_exit\n");
+		spin1_exit (0); 
 	}
-
+	
 }
 
 
 uint process_chan(REAL *out_buffer,REAL *in_buffer) 
 {  
 	uint segment_offset=SEGSIZE*(seg_index-1);
-	uint i,j,k;
-		
-	uint si=0;
-	REAL concha,earCanalInput,earCanalRes,earCanalOutput,ARoutput,stapesVelocity,stapesDisplacement;
-		
-#ifdef PRINT
-	io_printf (IO_BUF, "[core %d] segment %d (offset=%d) starting processing\n", coreID,seg_index,segment_offset);
-#endif
-	
+	uint i;		
+	REAL linout1,linout2,nonlinout1a,nonlinout2a,nonlinout1b,nonlinout2b,abs_x;
+
 	for(i=0;i<SEGSIZE;i++)
 	{
-		//concha
-		concha= (conchaFilter_b[0]*in_buffer[i]
-			+ conchaFilter_b[1]*past_input[0]
-			+ conchaFilter_b[2]*past_input[1]
-			- conchaFilter_a[1]*past_concha[0]
-			- conchaFilter_a[2]*past_concha[1]) * recip_conchaFilter_a0;
-		//update vars		
-		past_input[1]=past_input[0];
-		past_input[0]=in_buffer[i];
+	/*	#ifdef PROFILE
+		if(i==0)
+		{
+		  start_count_process = tc[T2_COUNT];
+		}
+		#endif*/
 
-		past_concha[1]=past_concha[0];
-		past_concha[0]=concha;
+		//Linear Path
+		linout1= lin_b0 * in_buffer[i] + lin_b1 * lin_x1 - 
+				lin_a1 * lin_y1[1] - lin_a2 * lin_y1[0];		
 
-		earCanalInput= conchaGainScalar* concha + in_buffer[i];
+		lin_x1=in_buffer[i];
+		lin_y1[0]=lin_y1[1];
+		lin_y1[1]=linout1;
 
-		//ear canal
-		earCanalRes= (earCanalFilter_b[0]*earCanalInput
-				+ earCanalFilter_b[1]*past_earCanalInput[0]
-				+ earCanalFilter_b[2]*past_earCanalInput[1]
-				- earCanalFilter_a[1]*past_earCanal[0]
-				- earCanalFilter_a[2]*past_earCanal[1]) * recip_earCanalFilter_a0;
-		//update vars	
-		past_earCanalInput[1]=past_earCanalInput[0];
-		past_earCanalInput[0]=earCanalInput;
-	
-		past_earCanal[1]=past_earCanal[0];
-		past_earCanal[0]=earCanalRes;
+		linout2= lin_b0 * linout1 + lin_b1 * lin_y1[0] - 
+				lin_a1 * lin_y2[1] - lin_a2 * lin_y2[0];
+		
+		lin_y2[0]= lin_y2[1];
+		lin_y2[1]= linout2;
 
-		earCanalOutput= earCanalGainScalar * earCanalRes + earCanalInput;
+		//non-linear path
+		//stage 1
+		nonlinout1a= nlin_b0 * in_buffer[i] + nlin_b1 * nlin_x1a - 
+				nlin_a1 * nlin_y1a[1] - nlin_a2 * nlin_y1a[0];
 
-		//AR
-		ARoutput= ARatt * stapesScalar * earCanalOutput;
+		nlin_x1a=in_buffer[i];
+		nlin_y1a[0]=nlin_y1a[1];
+		nlin_y1a[1]=nonlinout1a;
 
-		//stapes velocity
-		stapesVelocity= stapesHP_b[0] * ARoutput + 
-				stapesHP_b[1] * past_stapesInput[0] + 
-				stapesHP_b[2] * past_stapesInput[1] 
-				- stapesHP_a[1] * past_stapes[0]
-				- stapesHP_a[2] * past_stapes[1];
-		//update vars
-		past_stapesInput[1]= past_stapesInput[0];
-		past_stapesInput[0]= ARoutput;
-		past_stapes[1]= past_stapes[0];
-		past_stapes[0]= stapesVelocity;
+		nonlinout2a= nlin_b0 * nonlinout1a + nlin_b1 * nlin_y1a[0] - 
+				nlin_a1 * nlin_y2a[1] - nlin_a2 * nlin_y2a[0];
+		nlin_y2a[0]= nlin_y2a[1];
+		nlin_y2a[1]= nonlinout2a;
 
-		//stapes displacement
-		stapesDisplacement= stapesLP_b * stapesVelocity - stapesLP_a[1] * past_stapesDisp;
-		//update vars
-		past_stapesDisp=stapesDisplacement;	
+	/*	#ifdef PROFILE
+		if(i==0)
+		{
+			  end_count_process = tc[T2_COUNT];
+			  dtcm_profile_buffer[1+((seg_index-1)*3)]=start_count_process-end_count_process;
+		}
+		#endif	*/
+		
+		//MOC efferent effects
+		nonlinout2a*=MOC;
+		
+		//stage 2
+		abs_x= ABS(nonlinout2a);
+
+		if(abs_x<dispThresh)
+		{			
+			compressedNonlin= a * nonlinout2a;
+		}
+		else if(abs_x>0.0)//compress
+		{	
+			
+			compressedNonlin=SIGN(nonlinout2a) * ctBM * (REAL)expk(c * logk((accum)a*abs_x*recip_ctBM));
+			//compressedNonlin= sign * ctBM * exp(c * log(a * abs_x * recip_ctBM));
+		}	
+		else
+		{
+			compressedNonlin=0.0;
+		}			
+
+		//stage 3 
+		nonlinout1b= nlin_b0 * compressedNonlin + nlin_b1 * nlin_x1b -
+				 nlin_a1 * nlin_y1b[1] - nlin_a2 * nlin_y1b[0];
+
+		nlin_x1b=compressedNonlin;
+		nlin_y1b[0]=nlin_y1b[1];
+		nlin_y1b[1]=nonlinout1b;
+
+		nonlinout2b= nlin_b0 * nonlinout1b + nlin_b1 * nlin_y1b[0] - 
+				nlin_a1 * nlin_y2b[1] - nlin_a2 * nlin_y2b[0];
+
+		nlin_y2b[0]= nlin_y2b[1];
+		nlin_y2b[1]= nonlinout2b;
 	
 		//save to buffer
-		out_buffer[i]=stapesDisplacement;
-		//out_buffer[i]=stapesVelocity;//nlin_b0;//nonlinout1a;//nonlinout2b;//linout1;//nonlinout1a;
+		out_buffer[i]=linout2*lin_gain + nonlinout2b;
+		//out_buffer[i]=compressedNonlin;//nlin_b0;//nonlinout1a;//nonlinout2b;//linout1;//nonlinout1a;
 	}
 		
 	return segment_offset;
@@ -532,14 +484,7 @@ io_printf (IO_BUF, "buff_a-->buff_y\n");
 			io_printf (IO_BUF, "process complete in %d ticks (segment %d)\n",start_count_process-end_count_process,seg_index);
 		#endif	
 		#endif			
-
-		//wait until acknowledgement has been received from all connected DRNL models
-		//before writing new data to memory
-		/*while(sync_count<num_drnls)
-		{
-           spin1_delay_us(1);
-		}
-		sync_count=0;*/
+		
 		spin1_trigger_user_event(NULL,NULL);
 	}
 	else if (ttag==DMA_WRITE)
@@ -553,13 +498,6 @@ io_printf (IO_BUF, "buff_a-->buff_y\n");
 #endif
 		//flip write buffers
 		write_switch=!write_switch;
-
-		sync_count=0;
-		//send MC packet to connected DRNL models
-        while (!spin1_send_mc_packet(key, 0, WITH_PAYLOAD))
-        {
-            spin1_delay_us(1);
-        }
 	}
 	else
 	{
@@ -568,16 +506,6 @@ io_printf (IO_BUF, "buff_a-->buff_y\n");
 		#endif
 	}
 
-}
-
-void sync_check(uint key, uint payload)
-{
-
-    if(payload==2)
-    {
-        sync_count++;
-        log_info("ack mcpacket recieved sync_count=%d seg_index=%d\n",sync_count,seg_index);
-    }
 }
 
 void app_done ()
@@ -609,17 +537,14 @@ void c_main()
   //set timer tick
   spin1_set_timer_tick (TIMER_TICK_PERIOD);
 
-  app_init();
-
   //setup callbacks
   //process channel once data input has been read to DTCM
   spin1_callback_on (DMA_TRANSFER_DONE,transfer_handler,0);
   //reads from DMA to DTCM every tick
   spin1_callback_on (TIMER_TICK,data_read,-1);
   spin1_callback_on (USER_EVENT,data_write,0);
-  spin1_callback_on (MCPL_PACKET_RECEIVED,sync_check,1);
 
-
+  app_init();
 
   spin1_start (SYNC_WAIT);
   

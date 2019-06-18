@@ -1,0 +1,17 @@
+app_load ../model_binaries/DRNL.aplx . 1 20
+app_load ../model_binaries/DRNL.aplx . 2 20
+app_load ../model_binaries/DRNL.aplx . 3 20
+app_load ../model_binaries/DRNL.aplx . 4 20
+app_load ../model_binaries/DRNL.aplx . 5 20
+app_load ../model_binaries/DRNL.aplx . 6 20
+app_load ../model_binaries/DRNL.aplx . 7 20
+app_load ../model_binaries/DRNL.aplx . 8 20
+app_load ../model_binaries/DRNL.aplx . 9 20
+app_load ../model_binaries/DRNL.aplx . 10 20
+app_load ../model_binaries/DRNL.aplx . 11 20
+app_load ../model_binaries/DRNL.aplx . 12 20
+app_load ../model_binaries/DRNL.aplx . 13 20
+app_load ../model_binaries/DRNL.aplx . 14 20
+app_load ../model_binaries/DRNL.aplx . 15 20
+app_load ../model_binaries/DRNL.aplx . 16 20
+

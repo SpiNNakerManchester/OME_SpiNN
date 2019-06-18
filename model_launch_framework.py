@@ -1,8 +1,11 @@
 import spinnaker_graph_front_end as g
 
-from spinnak_ear.ome_machine_vertex import OMEMachineVertex
-from spinnak_ear.drnl_machine_vertex import DRNLMachineVertex
-from IHCAN_vertex import IHCANVertex
+from spinnak_ear.spinnak_ear_machine_vertices.ome_machine_vertex import \
+    OMEMachineVertex
+from spinnak_ear.spinnak_ear_machine_vertices.drnl_machine_vertex import \
+    DRNLMachineVertex
+from spinnak_ear.spinnak_ear_machine_vertices.ihcan_machine_vertex import \
+    IHCANMachineVertex
 import model_binaries
 
 from pacman.model.constraints.placer_constraints\

@@ -75,6 +75,8 @@ class IHCANMachineVertex(
                ('RECORDING', 2),
                ('PROFILE', 3)])
 
+    SPIKE_RECORDING_REGION_ID = 0
+
     def __init__(self, drnl,resample_factor,seed,is_recording,
                  n_fibres=2,ear_index=0,bitfield=True,profile=True,
                  n_lsr=0,n_msr=0,n_hsr=0):
@@ -290,7 +292,8 @@ class IHCANMachineVertex(
         # Read the data recorded
         # data_values, _ = buffer_manager.get_data_for_vertex(placement, 0)
         # data = data_values.read_all()
-        data, _ = buffer_manager.get_data_by_placement(placement, 0)
+        data, _ = buffer_manager.get_data_by_placement(
+            placement, SPIKE_RECORDING_REGION_ID)
 
         if self._bitfield:
             formatted_data = numpy.array(data, dtype=numpy.uint8)

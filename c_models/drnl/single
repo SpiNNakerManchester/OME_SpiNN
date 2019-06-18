@@ -1,0 +1,4 @@
+app_stop 20
+app_load ../model_binaries/IHC_AN_float.aplx . 1 20
+app_sig all 20 sync0
+
