@@ -249,7 +249,7 @@ class DRNLMachineVertex(
 
     @overrides(AbstractProvidesNKeysForPartition.get_n_keys_for_partition)
     def get_n_keys_for_partition(self, partition, graph_mapper):
-        return 4#2  # two for control IDs
+        return 1#4#2  # two for control IDs
 
     @overrides(AbstractHasProfileData.get_profile_data)
     def get_profile_data(self, transceiver, placement):

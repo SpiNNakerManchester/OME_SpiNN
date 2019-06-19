@@ -32,7 +32,7 @@ import numpy as np
 class ANGroupMachineVertex(
         MachineVertex, AbstractHasAssociatedBinary,
         AbstractGeneratesDataSpecification,
-        ):
+        AbstractProvidesNKeysForPartition):
     """ A vertex that runs the multi-cast acknowledge algorithm
     """
     # The data type of the keys
@@ -157,7 +157,7 @@ class ANGroupMachineVertex(
             key_and_mask_table[i]['key']=key_and_mask.key
             key_and_mask_table[i]['mask']=key_and_mask.mask
             key_and_mask_table[i]['offset']=offset
-            offset+=vertex._n_atoms
+            offset += vertex._n_atoms
 
         # sort entries by key
         key_and_mask_table.sort(order='key')
@@ -165,3 +165,7 @@ class ANGroupMachineVertex(
         # End the specification
         spec.end_specification()
 
+
+    @overrides(AbstractProvidesNKeysForPartition.get_n_keys_for_partition)
+    def get_n_keys_for_partition(self, partition, graph_mapper):
+        return self._n_atoms  # two for control IDs

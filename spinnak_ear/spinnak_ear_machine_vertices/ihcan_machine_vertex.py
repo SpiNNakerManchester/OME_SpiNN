@@ -155,7 +155,7 @@ class IHCANMachineVertex(
 
     @overrides(AbstractProvidesNKeysForPartition.get_n_keys_for_partition)
     def get_n_keys_for_partition(self, partition, graph_mapper):
-        return 4#for control IDs
+        return 2#4#for control IDs#TODO: change to n_fibres
 
     @overrides(AbstractHasProfileData.get_profile_data)
     def get_profile_data(self, transceiver, placement):
@@ -293,7 +293,7 @@ class IHCANMachineVertex(
         # data_values, _ = buffer_manager.get_data_for_vertex(placement, 0)
         # data = data_values.read_all()
         data, _ = buffer_manager.get_data_by_placement(
-            placement, SPIKE_RECORDING_REGION_ID)
+            placement, self.SPIKE_RECORDING_REGION_ID)
 
         if self._bitfield:
             formatted_data = numpy.array(data, dtype=numpy.uint8)

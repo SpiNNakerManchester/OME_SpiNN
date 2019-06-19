@@ -229,17 +229,16 @@ class SpiNNakEarApplicationVertex(
     def get_connections_from_machine(
             self, transceiver, placement, edge, graph_mapper, routing_infos,
             synapse_information, machine_time_step, using_extra_monitor_cores,
-            placements=None, data_receiver=None,
-            sender_extra_monitor_core_placement=None,
-            extra_monitor_cores_for_router_timeout=None,
-            handle_time_out_configuration=True, fixed_routes=None):
+            placements=None,  monitor_api=None, monitor_placement=None,
+            monitor_cores=None, handle_time_out_configuration=True,
+            fixed_routes=None):
         raise Exception("cant get connections from projections to here yet")
 
     @overrides(AbstractAcceptsIncomingSynapses.clear_connection_cache)
     def clear_connection_cache(self):
         pass
 
-    @overrides(ApplicationVertex.get_resources_used_by_atoms)
+
     def get_resources_used_by_atoms(self, vertex_slice):
         vertex_label = self._mv_index_list[vertex_slice.lo_atom]
         if vertex_label == "ome":
@@ -314,7 +313,7 @@ class SpiNNakEarApplicationVertex(
 
     @inject_items({"machine_time_step": "MachineTimeStep"})
     @overrides(
-        ApplicationVertex.create_machine_vertex,
+        HandOverToVertex.create_and_add_to_graphs_and_resources,
         additional_arguments={"machine_time_step"}
     )
     def create_and_add_to_graphs_and_resources(
@@ -419,6 +418,18 @@ class SpiNNakEarApplicationVertex(
         return self._n_atoms
 
     def _calculate_n_atoms(self, n_group_tree_rows):
+        # ome atom
+        n_atoms = 1
+
+        # dnrl atoms
+        n_atoms += self._model.n_channels
+
+        # ihcan atoms
+        n_atoms += self._model.n_channels * self._model.n_ihcs
+
+        # an group atoms
+
+
 
         # list indices correspond to atom index
         mv_index_list = []
@@ -519,18 +530,18 @@ class SpiNNakEarApplicationVertex(
                 edge_index_list, ihc_seeds, ome_indices)
 
     @overrides(HandOverToVertex.source_vertices_from_edge)
-    def source_vertices_from_edge(self, projection):
+    def source_vertices_from_edge(self, edge):
         """ returns vertices for connecting this projection
 
-        :param projection: projection to connect to sources
+        :param edge: projection to connect to sources
         :return: the iterable of vertices to be sources of this projection
         """
 
     @overrides(HandOverToVertex.destination_vertices_from_edge)
-    def destination_vertices_from_edge(self, projection):
+    def destination_vertices_from_edge(self, edge):
         """ return vertices for connecting this projection
 
-        :param projection: projection to connect to destinations
+        :param edge: projection to connect to destinations
         :return: the iterable of vertices to be destinations of this \
         projection.
         """

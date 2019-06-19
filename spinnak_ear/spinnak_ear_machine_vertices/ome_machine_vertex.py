@@ -192,12 +192,12 @@ class OMEMachineVertex(
 
     @overrides(AbstractProvidesNKeysForPartition.get_n_keys_for_partition)
     def get_n_keys_for_partition(self, partition, graph_mapper):
-        return 4 #for control IDs
+        return 1#4 #for control IDs
 
     @overrides(AbstractHasProfileData.get_profile_data)
     def get_profile_data(self, transceiver, placement):
         if self._profile:
-            profiles =  profile_utils.get_profiling_data(
+            profiles = profile_utils.get_profiling_data(
                 1,
                 self.PROFILE_TAG_LABELS, transceiver, placement)
             self._process_profile_times = profiles._tags['TIMER'][1]
