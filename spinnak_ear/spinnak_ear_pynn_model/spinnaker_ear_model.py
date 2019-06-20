@@ -7,6 +7,9 @@ import numpy as np
 
 class SpiNNakEar(AbstractPyNNModel):
 
+    # no extra params
+    default_population_parameters = {}
+
     # defaults magic numbers
     _DEFAULT_N_FIBRES_PER_IHCAN = 2
     _DEFAULT_N_LSR_PER_IHC = 2
@@ -29,7 +32,7 @@ class SpiNNakEar(AbstractPyNNModel):
     MAX_NEURON_SIZE = 30000.0
 
     # default params
-    default_population_parameters = {
+    DEFAULT_PARAMS = {
         'audio_input': None,
         'fs': _DEFAULT_AUDIO_SAMPLING_FREQUENCY,
         'n_channels': _DEFAULT_N_CHANNELS,
@@ -57,6 +60,8 @@ class SpiNNakEar(AbstractPyNNModel):
         #
         "_n_channels",
         #
+        '_pole_freqs',
+        #
         "_param_file",
         # left or right ear
         "_ear_index",
@@ -83,24 +88,21 @@ class SpiNNakEar(AbstractPyNNModel):
     ]
 
     def __init__(
-            self, audio_input=default_population_parameters['audio_input'],
-            fs=default_population_parameters['fs'],
-            n_channels=default_population_parameters['n_channels'],
-            pole_freqs=default_population_parameters['pole_freqs'],
-            param_file=default_population_parameters['param_file'],
-            ear_index=default_population_parameters['ear_index'],
-            scale=default_population_parameters['scale'],
-            n_ihc=default_population_parameters['n_ihc'],
-            n_fibres_per_ihcan=default_population_parameters[
-                'n_fibres_per_ihcan'],
-            n_lsr_per_ihc=default_population_parameters['n_lsr_per_ihc'],
-            n_msr_per_ihc=default_population_parameters['n_msr_per_ihc'],
-            n_hsr_per_ihc=default_population_parameters['n_hsr_per_ihc'],
-            nyquist_ratio=default_population_parameters['nyquist_ratio'],
-            min_audio_frequency=default_population_parameters[
-                'min_audio_frequency'],
-            max_audio_frequency=default_population_parameters[
-                'max_audio_frequency']):
+            self, audio_input=DEFAULT_PARAMS['audio_input'],
+            fs=DEFAULT_PARAMS['fs'],
+            n_channels=DEFAULT_PARAMS['n_channels'],
+            pole_freqs=DEFAULT_PARAMS['pole_freqs'],
+            param_file=DEFAULT_PARAMS['param_file'],
+            ear_index=DEFAULT_PARAMS['ear_index'],
+            scale=DEFAULT_PARAMS['scale'],
+            n_ihc=DEFAULT_PARAMS['n_ihc'],
+            n_fibres_per_ihcan=DEFAULT_PARAMS['n_fibres_per_ihcan'],
+            n_lsr_per_ihc=DEFAULT_PARAMS['n_lsr_per_ihc'],
+            n_msr_per_ihc=DEFAULT_PARAMS['n_msr_per_ihc'],
+            n_hsr_per_ihc=DEFAULT_PARAMS['n_hsr_per_ihc'],
+            nyquist_ratio=DEFAULT_PARAMS['nyquist_ratio'],
+            min_audio_frequency=DEFAULT_PARAMS['min_audio_frequency'],
+            max_audio_frequency=DEFAULT_PARAMS['max_audio_frequency']):
 
         self._fs = fs
         self._n_channels = int(n_channels)

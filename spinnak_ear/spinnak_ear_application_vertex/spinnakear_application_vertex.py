@@ -78,6 +78,8 @@ class SpiNNakEarApplicationVertex(
         "The input sampling frequency is too high for the chosen simulation " 
         "time scale. Please reduce Fs or increase the time scale factor in "
         "the config file")
+    N_NEURON_ERROR = (
+        "the number of neurons {} and the number of atoms  {} do not match")
 
     SPIKES = "spikes"
     MOC = "moc"
@@ -179,19 +181,15 @@ class SpiNNakEarApplicationVertex(
                 self._ihc_seeds = pre_gen_vars['ihc_seeds']
                 self._ome_indices = pre_gen_vars['ome_indices']
             except:
-                (self._n_atoms, self._mv_index_list, self._parent_index_list,
-                 self._edge_index_list, self._ihc_seeds, self._ome_indices) = \
-                    self._calculate_n_atoms(self._n_group_tree_rows)
+                self._n_atoms = self._calculate_n_atoms(self._n_group_tree_rows)
                 # save fixed param file
                 self._save_pre_gen_vars(self._model.param_file)
         else:
-            (self._n_atoms, self._mv_index_list, self._parent_index_list,
-             self._edge_index_list, self._ihc_seeds, self._ome_indices) = \
-                self._calculate_n_atoms(self._n_group_tree_rows)
+            self._n_atoms = self._calculate_n_atoms(self._n_group_tree_rows)
 
-        if self._n_atoms != n_neurons:
-            raise ConfigurationException(
-                "the number of neurons and the number of atoms do not match")
+        #if self._n_atoms != n_neurons:
+        #    raise ConfigurationException(
+               #self.N_NEURON_ERROR.format(n_neurons, self._n_atoms)
 
     @overrides(AbstractAcceptsIncomingSynapses.get_synapse_id_by_target)
     def get_synapse_id_by_target(self, target):
@@ -425,109 +423,16 @@ class SpiNNakEarApplicationVertex(
         n_atoms += self._model.n_channels
 
         # ihcan atoms
-        n_atoms += self._model.n_channels * self._model.n_ihcs
+        n_angs = self._model.n_channels * self._model.n_ihc
+        n_atoms += n_angs
 
         # an group atoms
-
-
-
-        # list indices correspond to atom index
-        mv_index_list = []
-
-        # each entry is a list of tuples containing mv indices the mv connects
-        # to and the data partition name for the edge
-        edge_index_list = []
-
-        # each entry is the ID of the parent vertex - used to obtain parent
-        # spike IDs
-        parent_index_list = []
-        ome_indices = []
-        ome_index = len(mv_index_list)
-        ome_indices.append(ome_index)
-        mv_index_list.append('ome')
-        parent_index_list.append([])
-        edge_index_list.append([])
-
-        for _ in range(self._model.n_channels):
-            drnl_index = len(mv_index_list)
-            mv_index_list.append('drnl')
-            parent_index_list.append([ome_index])
-            edge_index_list.append([])
-
-            # Add the data edges (OME->DRNLs) to the ome entry in the edge list
-            edge_index_list[ome_index].append(
-                (drnl_index, data_partition_dict['ome']))
-            fibres = []
-            for __ in range(self._model.n_hsr_per_ihc):
-                fibres.append(2)
-            for ___ in range(self._model.n_msr_per_ihc):
-                fibres.append(1)
-            for ____ in range(self._model.n_lsr_per_ihc):
-                fibres.append(0)
-
-            random.shuffle(fibres)
-
-            for j in range(self._model.n_ihcs):
-                ihc_index = len(mv_index_list)
-
-                # randomly pick fibre types
-                chosen_indices = [
-                    fibres.pop() for _ in range(self._model.n_fibres_per_ihcan)]
-
-                mv_index_list.append(
-                    'ihc{}{}{}'.format(
-                        chosen_indices.count(0), chosen_indices.count(1),
-                        chosen_indices.count(2)))
-
-                # drnl data/command
-                # add the IHC mv index to the DRNL edge list entries
-                edge_index_list[drnl_index].append(
-                    (ihc_index, data_partition_dict['drnl']))
-                # add the drnl parent index to the ihc
-                parent_index_list.append([drnl_index])
-                edge_index_list.append([])
-
-        # generate ihc seeds
-        n_ihcans = self._model.n_channels * self._model.n_ihcs
-        random_range = numpy.arange(n_ihcans * 4, dtype=numpy.uint32)
-        ihc_seeds = numpy.random.choice(
-            random_range, int(n_ihcans * 4), replace=False)
-
-        # now add on the AN Group vertices
-        # builds the binary tree aggregator
-        n_child_per_group = self._MAX_N_ATOMS_PER_CORE
-        n_angs = n_ihcans
-
         for row_index in range(n_group_tree_rows):
-            n_row_angs = int(numpy.ceil(float(n_angs) / n_child_per_group))
-            if row_index > 0:
-                ang_indices = [
-                    i for i, label in enumerate(mv_index_list)
-                    if label == "inter_{}".format(row_index-1)]
-            else:
-                ang_indices = [
-                    i for i, label in enumerate(mv_index_list)
-                    if "ihc" in label]
-
-            for an in range(n_row_angs):
-                if row_index == n_group_tree_rows-1:
-                    mv_index_list.append("group_{}".format(row_index))
-                else:
-                    mv_index_list.append("inter_{}".format(row_index))
-                edge_index_list.append([])
-                ang_index = len(mv_index_list) - 1
-
-                # find child ihcans
-                child_indices = ang_indices[
-                    an * n_child_per_group:an * n_child_per_group +
-                    n_child_per_group]
-                parent_index_list.append(child_indices)
-                for i in child_indices:
-                    edge_index_list[i].append((ang_index, 'AN'))
+            n_row_angs = int(
+                numpy.ceil(float(n_angs) / self._MAX_N_ATOMS_PER_CORE))
+            n_atoms += n_row_angs
             n_angs = n_row_angs
-
-        return (len(mv_index_list), mv_index_list, parent_index_list,
-                edge_index_list, ihc_seeds, ome_indices)
+        return n_atoms
 
     @overrides(HandOverToVertex.source_vertices_from_edge)
     def source_vertices_from_edge(self, edge):
