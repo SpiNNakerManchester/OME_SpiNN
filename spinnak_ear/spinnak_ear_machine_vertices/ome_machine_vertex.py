@@ -42,29 +42,23 @@ from spinn_front_end_common.interface.profiling.abstract_has_profile_data \
 from spinn_front_end_common.interface.profiling import profile_utils
 from spinn_front_end_common.interface.simulation import simulation_utilities
 from data_specification.constants import APP_PTR_TABLE_BYTE_SIZE
+from spinnak_ear.spinnak_ear_machine_vertices.abstract_ear_profiled import \
+    AbstractEarProfiled
 
 
 class OMEMachineVertex(
-        MachineVertex,
+        MachineVertex, AbstractEarProfiled,
         AbstractHasAssociatedBinary,
         AbstractGeneratesDataSpecification,
-        AbstractProvidesNKeysForPartition,
-        AbstractHasProfileData):
+        AbstractProvidesNKeysForPartition):
     """ A vertex that runs the OME algorithm
     """
 
     # The number of bytes for the parameters
     _N_PARAMETER_BYTES = (9*4) + (6*8)
-    # The data type of each data element
-    _DATA_ELEMENT_TYPE = DataType.FLOAT_64#DataType.FLOAT_32#
-    # The data type of the data count
-    _DATA_COUNT_TYPE = DataType.UINT32
-    # The numpy data type of each data element
-    _NUMPY_DATA_ELEMENT_TYPE = numpy.double#numpy.single#
-    # The data type of the keys
-    _KEY_ELEMENT_TYPE = DataType.UINT32
-    # the data type of the coreID
-    _COREID_TYPE = DataType.UINT32
+
+    # outgoing partition name from OME vertex
+    OME_PARTITION_ID = "OMEData"
 
     REGIONS = Enum(
         value="REGIONS",
@@ -73,106 +67,44 @@ class OMEMachineVertex(
                ('RECORDING', 2),
                ('PROFILE', 3)])
 
-    PROFILE_TAG_LABELS = {
-        0: "TIMER",
-        1: "DMA_READ",
-        2: "INCOMING_SPIKE",
-        3: "PROCESS_FIXED_SYNAPSES",
-        4: "PROCESS_PLASTIC_SYNAPSES"}
-
-    def __init__(self, data,fs,num_bfs,time_scale=1,profile=True,data_partition_name="OMEData",
-            acknowledge_partition_name="OMEAck",command_partition_name="OMECommand"):
+    def __init__(
+            self, data, fs, num_bfs, time_scale=1, profile=True):
         """
-
-        :param coordinator: The coordinator vertex
-        :param model: The model being simulated
+        
+        :param data: 
+        :param fs: 
+        :param num_bfs: 
+        :param time_scale: 
+        :param profile: 
         """
 
         MachineVertex.__init__(self, label="OME Node", constraints=None)
         AbstractProvidesNKeysForPartition.__init__(self)
+        AbstractEarProfiled.__init__(self, profile, self.REGIONS.PROFILE.value)
+
         self._data = data
-        self._data_partition_name = data_partition_name
-        self._acknowledge_partition_name = acknowledge_partition_name
-        self._command_partition_name = command_partition_name
-        self._fs=fs
+        self._fs = fs
         self._num_bfs = num_bfs
         self._time_scale = time_scale
 
-        self._drnl_vertices = list()
-        self._drnl_placements = list()
-        self._data_receiver = dict()
-        self._mack_vertices = list()
-
         self._data_size = (
-            (len(self._data) * self._DATA_ELEMENT_TYPE.size) +
-            self._DATA_COUNT_TYPE.size
-        )
-        self._sdram_usage = (
-            self._N_PARAMETER_BYTES + self._data_size
-        )
+            (len(self._data) * DataType.FLOAT_64.size) + DataType.UINT32.size)
+
         # calculate stapes hpf coefficients
-        Wn = 1. / self._fs * 2. * 700.
-        [self._shb, self._sha] = sig.butter(2, Wn, 'high')
-        #matlab_output = loadmat('./hpf_coeffs.mat')
-        #sha = matlab_output['stapesHighPass_a'].tolist()
-        #self._sha = numpy.asarray(sha[0])
-        #shb = matlab_output['stapesHighPass_b'].tolist()
-        #self._shb = numpy.asarray(shb[0])
-
-        # Set up for profiling
-        self._profile = profile
-        self._n_profile_samples = 10000
-        self._process_profile_times = None
-
-    @property
-    def data_partition_name(self):
-        return self._data_partition_name
-
-    @property
-    def acknowledge_partition_name(self):
-        return self._acknowledge_partition_name
-
-    @property
-    def command_partition_name(self):
-        return self._command_partition_name
-
-    def register_processor(self, drnl_vertex):
-        self._drnl_vertices.append(drnl_vertex)
-
-    def register_mack_processor(self, mack_vertex):
-        self._mack_vertices.append(mack_vertex)
-
-    def get_acknowledge_key(self, placement, routing_info):
-        key = routing_info.get_first_key_from_pre_vertex(
-            placement.vertex, self._acknowledge_partition_name)
-        return key
-
-    def get_mask(self, placement, routing_info):
-        mask = routing_info.get_routing_info_from_pre_vertex(
-            self, self._data_partition_name).first_mask
-        return ~mask & 0xFFFFFFFF
+        wn = 1. / self._fs * 2. * 700.
+        [self._shb, self._sha] = sig.butter(2, wn, 'high')
 
     @property
     def n_data_points(self):
         return len(self._data)
-    @property
-    def fs(self):
-        return self._fs
-
-    @property
-    def get_num_bfs(self):
-        return self._num_bfs
 
     @property
     @overrides(MachineVertex.resources_required)
     def resources_required(self):
-        sdram = self._N_PARAMETER_BYTES + self._data_size
-        sdram += len(self._drnl_vertices) * self._KEY_ELEMENT_TYPE.size
-        sdram += constants.SYSTEM_BYTES_REQUIREMENT + 8
-        sdram += APP_PTR_TABLE_BYTE_SIZE
-
-        if self._profile:
-            sdram += profile_utils.get_profile_region_size(self._n_profile_samples)
+        sdram = constants.SYSTEM_BYTES_REQUIREMENT
+        sdram += self._N_PARAMETER_BYTES + self._data_size
+        sdram += self._num_bfs * DataType.UINT32.size
+        sdram += self._profile_size()
 
         resources = ResourceContainer(
             dtcm=DTCMResource(0),
@@ -187,159 +119,89 @@ class OMEMachineVertex(
 
     @overrides(AbstractHasAssociatedBinary.get_binary_start_type)
     def get_binary_start_type(self):
-        # return ExecutableType.SYNC
         return ExecutableType.USES_SIMULATION_INTERFACE
 
     @overrides(AbstractProvidesNKeysForPartition.get_n_keys_for_partition)
     def get_n_keys_for_partition(self, partition, graph_mapper):
-        return 1#4 #for control IDs
-
-    @overrides(AbstractHasProfileData.get_profile_data)
-    def get_profile_data(self, transceiver, placement):
-        if self._profile:
-            profiles = profile_utils.get_profiling_data(
-                1,
-                self.PROFILE_TAG_LABELS, transceiver, placement)
-            self._process_profile_times = profiles._tags['TIMER'][1]
-        else:
-            profiles=ProfileData(self.PROFILE_TAG_LABELS)
-        return profiles
+        return 1
 
     @inject_items({
         "routing_info": "MemoryRoutingInfos",
         "tags": "MemoryTags",
-        "placements": "MemoryPlacements"
+        "placements": "MemoryPlacements",
+        "machine_time_step": "MachineTimeStep",
+        "time_scale_factor": "TimeScaleFactor"
     })
     @overrides(
         AbstractGeneratesDataSpecification.generate_data_specification,
-        additional_arguments=["routing_info", "tags", "placements"])
+        additional_arguments=[
+            "routing_info", "tags", "placements", "machine_time_step",
+            "time_scale_factor"])
     def generate_data_specification(
-            self, spec, placement, routing_info, tags, placements):
+            self, spec, placement, routing_info, tags, placements,
+            machine_time_step, time_scale_factor):
 
-        # Setup words + 1 for flags + 1 for recording size
-        setup_size = constants.SYSTEM_BYTES_REQUIREMENT + 8
         # reserve system region
         spec.reserve_memory_region(
             region=self.REGIONS.SYSTEM.value,
-            size=setup_size, label='systemInfo')
+            size=constants.SIMULATION_N_BYTES, label='systemInfo')
 
         # Reserve and write the parameters region
         region_size = self._N_PARAMETER_BYTES + self._data_size
-        region_size += len(self._drnl_vertices) * self._KEY_ELEMENT_TYPE.size
+        region_size += self._num_bfs * DataType.UINT32.size
         spec.reserve_memory_region(self.REGIONS.PARAMETERS.value, region_size)
 
-        if self._profile:
-            #reserve profile region
-            profile_utils.reserve_profile_region(
-                spec, 1,
-                self._n_profile_samples)
+        self._reserve_profile_memory_regions(spec)
 
         # simulation.c requirements
         spec.switch_write_focus(self.REGIONS.SYSTEM.value)
         spec.write_array(simulation_utilities.get_simulation_header_array(
-            self.get_binary_file_name(), 1,
-            1))
+            self.get_binary_file_name(), machine_time_step, time_scale_factor))
 
         spec.switch_write_focus(self.REGIONS.PARAMETERS.value)
 
-        # Get the placement of the vertices and find out how many chips
-        # are needed
-        keys = list()
-        for vertex in self._drnl_vertices:
-            drnl_placement = placements.get_placement_of_vertex(vertex)
-            self._drnl_placements.append(drnl_placement)
-            key = routing_info.get_first_key_from_pre_vertex(
-                vertex, self._acknowledge_partition_name)
-            keys.append(key)
-        keys.sort()
-
         # Write the data size in words
-        spec.write_value(
-            len(self._data) ,
-            data_type=self._DATA_COUNT_TYPE)
+        spec.write_value(len(self._data))
 
         # Write the CoreID
-        spec.write_value(
-            placement.p, data_type=self._COREID_TYPE)
+        spec.write_value(placement.p)
 
         # Write number of drnls
-        spec.write_value(
-            len(self._drnl_vertices), data_type=self._COREID_TYPE)
+        spec.write_value(self._num_bfs)
 
         # Write number of macks #TODO DELETE
-        spec.write_value(
-            len(self._mack_vertices), data_type = self._COREID_TYPE)
+        spec.write_value(0)
 
         # Write the sampling frequency
-        spec.write_value(
-            self._fs, data_type=DataType.UINT32)
+        spec.write_value(self._fs)
 
-        spec.write_value(
-            self._num_bfs, data_type=DataType.UINT32)
+        spec.write_value(self._num_bfs)
 
         # Write the key
-        if len(keys)>0:
-            data_key_orig = routing_info.get_routing_info_from_pre_vertex(
-                self, self._data_partition_name).first_key
-            data_key = routing_info.get_first_key_from_pre_vertex(
-                self, self._data_partition_name)
-            spec.write_value(data_key, data_type=DataType.UINT32)
-        else:
-            raise Exception("no ome key generated!")
+        data_key = routing_info.get_first_key_from_pre_vertex(
+            self, self.OME_PARTITION_ID)
+        spec.write_value(data_key)
 
         # write the command key
-        # command_key = routing_info.get_first_key_from_pre_vertex(
-        #     self,self._command_partition_name)
-        # spec.write_value(command_key, data_type=DataType.UINT32)
-        spec.write_value(0, data_type=DataType.UINT32) #TODO: remove
+        spec.write_value(0) # TODO: remove
 
-        spec.write_value(self._time_scale,data_type=DataType.UINT32)
+        spec.write_value(self._time_scale)
 
         # write the stapes high pass filter coefficients
-        spec.write_value(
-            0, data_type=DataType.UINT32)#TODO:why is this needed?
+        # TODO:why is this needed?
+        spec.write_value(0)
 
         # write the filter params
         for param in self._shb:
-            spec.write_value(param,data_type=DataType.FLOAT_64)
+            spec.write_value(param, data_type=DataType.FLOAT_64)
         for param in self._sha:
-            spec.write_value(param,data_type=DataType.FLOAT_64)
-        # spec.write_value(
-        #     self._shb[0], data_type=self._DATA_ELEMENT_TYPE)
-        # spec.write_value(
-        #     self._shb[1], data_type=self._DATA_ELEMENT_TYPE)
-        # spec.write_value(
-        #     self._shb[2], data_type=self._DATA_ELEMENT_TYPE)
-        # spec.write_value(
-        #     self._sha[0], data_type=self._DATA_ELEMENT_TYPE)
-        # spec.write_value(
-        #     self._sha[1], data_type=self._DATA_ELEMENT_TYPE)
-        # spec.write_value(
-        #     self._sha[2], data_type=self._DATA_ELEMENT_TYPE)
+            spec.write_value(param, data_type=DataType.FLOAT_64)
 
         # Write the data - Arrays must be 32-bit values, so convert
-        data = numpy.array(self._data, dtype=self._NUMPY_DATA_ELEMENT_TYPE)
+        data = numpy.array(self._data, dtype=numpy.double)
         spec.write_array(data.view(numpy.uint32))
 
-        if self._profile:
-            profile_utils.write_profile_region_data(
-                spec, self.REGIONS.PROFILE.value, self._n_profile_samples)
+        self._write_profile_dsg(spec)
 
         # End the specification
         spec.end_specification()
-
-    def read_samples(self, buffer_manager):
-        """ Read back the samples
-        """
-        progress = ProgressBar(len(self._drnl_placements), "Reading results")
-        samples = list()
-        for placement in self._drnl_placements:
-
-            # Read the data recorded
-            samples.append(
-                placement.vertex.read_samples(buffer_manager))
-            progress.update()
-        progress.end()
-
-        # Merge all the arrays
-        return numpy.hstack(samples)

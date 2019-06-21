@@ -229,25 +229,22 @@ class IHCANMachineVertex(
         spec.write_value(
             placement.p, data_type=self._COREID_TYPE)
 
-        #Write the DRNLAppID
+        # Write the DRNLAppID
         spec.write_value(
             0, data_type=self._COREID_TYPE)
 
         # Write the DRNL data key
-        # spec.write_value(0)
-        # spec.write_value(self._drnl.get_acknowledge_key(
-        #     placement, routing_info))
         spec.write_value(self._drnl.get_data_key(routing_info))
 
-        #Write the spike resample factor
+        # Write the spike resample factor
         spec.write_value(
             self._resample_factor, data_type=self._COREID_TYPE)
 
-        #Write the sampling frequency
+        # Write the sampling frequency
         spec.write_value(
             self._fs, data_type=self._COREID_TYPE)
 
-        #Write the routing key
+        # Write the routing key
         partitions = machine_graph \
             .get_outgoing_edge_partitions_starting_at_vertex(self)
         for partition in partitions:
@@ -255,19 +252,18 @@ class IHCANMachineVertex(
                 rinfo = routing_info.get_routing_info_from_partition(
                     partition)
                 key = rinfo.first_key
-                mask = rinfo.first_mask
                 spec.write_value(
                    key, data_type=self._COREID_TYPE)
 
-        #Write is recording bool
+        # Write is recording bool
         spec.write_value(int(self._is_recording),data_type=self._COREID_TYPE)
 
-        #Write number of spontaneous fibres
+        # Write number of spontaneous fibres
         spec.write_value(int(self._n_lsr), data_type=self._COREID_TYPE)
         spec.write_value(int(self._n_msr), data_type=self._COREID_TYPE)
         spec.write_value(int(self._n_hsr), data_type=self._COREID_TYPE)
 
-        #Write the seed
+        # Write the seed
         data = numpy.array(self._seed, dtype=numpy.uint32)
         spec.write_array(data.view(numpy.uint32))
 
@@ -277,7 +273,7 @@ class IHCANMachineVertex(
         spec.write_array(recording_utilities.get_recording_header_array(
             [self._recording_size], ip_tags=ip_tags))
 
-        #Write profile regions
+        # Write profile regions
         if self._profile:
             profile_utils.write_profile_region_data(
                 spec, self.REGIONS.PROFILE.value,
@@ -297,7 +293,7 @@ class IHCANMachineVertex(
 
         if self._bitfield:
             formatted_data = numpy.array(data, dtype=numpy.uint8)
-            #only interested in every 4th byte!
+            # only interested in every 4th byte!
             formatted_data = formatted_data[::4]
             lsr = formatted_data[0::2]#TODO:change names as output may not correspond to lsr + hsr fibres
             hsr = formatted_data[1::2]

@@ -97,3 +97,76 @@ calc n atoms
 
         return (len(mv_index_list), mv_index_list, parent_index_list,
                 edge_index_list, ihc_seeds, ome_indices)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # data per moc recording
+        self._data_size_bytes = (
+            (self._model.audio_input.size * self._DATA_ELEMENT_TYPE.size) +
+            self._DATA_COUNT_TYPE.size)
+
+
+
+
+
+
+
+
+
+
+
+
+ def get_resources_used_by_atoms(self, vertex_slice):
+        vertex_label = self._mv_index_list[vertex_slice.lo_atom]
+        if vertex_label == "ome":
+            sdram_resource_bytes = (9*4) + (6*8) + self._data_size_bytes
+            drnl_vertices = [i for i in self._mv_index_list if i == self.DRNL]
+            sdram_resource_bytes += (
+                len(drnl_vertices) * self._KEY_ELEMENT_TYPE.size)
+
+        elif vertex_label == "mack":
+            sdram_resource_bytes = 2*4 + 4 * self._KEY_ELEMENT_TYPE.size
+
+        elif vertex_label == self._DRNL:
+            sdram_resource_bytes = 14*4
+            sdram_resource_bytes += 512 * 12  # key mask tab
+            sdram_resource_bytes += 8 * 8
+            sdram_resource_bytes += 256  # max n bytes for conn_lut
+            if self._is_recording_moc:
+                sdram_resource_bytes += self._data_size_bytes
+
+        # elif vertex_label == "ihc":
+        elif "ihc" in vertex_label:
+            if self._is_recording_spikes:
+                sdram_resource_bytes = (
+                    15 * 4 + 1 * self._KEY_ELEMENT_TYPE.size +
+                    self._model.n_fibres_per_ihcan * numpy.ceil(
+                        self._model.audio_input.size / 8.) * 4)
+            else:
+                sdram_resource_bytes = 15*4 + 1 * self._KEY_ELEMENT_TYPE.size
+        else:  # angroup
+            child_vertices = (
+                [self._mv_list[vertex_index] for vertex_index
+                 in self._parent_index_list[vertex_slice.lo_atom]])
+            n_child_keys = len(child_vertices)
+            sdram_resource_bytes = 5*4 + 12 * n_child_keys
+
+        container = ResourceContainer(
+            sdram=ConstantSDRAM(
+                sdram_resource_bytes +
+                front_end_common_constants.SYSTEM_BYTES_REQUIREMENT + 8),
+            dtcm=DTCMResource(0),
+            cpu_cycles=CPUCyclesPerTickResource(0))
+
+        return container
