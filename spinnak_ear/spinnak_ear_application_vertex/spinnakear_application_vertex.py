@@ -1,4 +1,4 @@
-from pacman.model.graphs.common import Slice
+from pacman.model.graphs.common import Slice, EdgeTrafficType
 from spinn_front_end_common.abstract_models import AbstractChangableAfterRun
 from spinn_front_end_common.utilities import \
     globals_variables, helpful_functions
@@ -59,6 +59,8 @@ class SpiNNakEarApplicationVertex(
         "_is_recording_spikes",
         #
         "_is_recording_moc",
+        #
+        "_ihcan_fibre_random_seed",
     ]
 
     # NOTES IHC = inner hair cell
@@ -97,11 +99,15 @@ class SpiNNakEarApplicationVertex(
 
     # random numbers
     _MAX_N_ATOMS_PER_CORE = 2
+    _N_SEEDS_PER_IHCAN_VERTEX = 4
     _FINAL_ROW_N_ATOMS = 256
     MAX_TIME_SCALE_FACTOR_RATIO = 22050
+    HSR_FLAG = 2
+    MSR_FLAG = 1
+    LSR_FLAG = 0
 
     def __init__(
-            self, n_neurons, constraints, label, model, profile):
+            self, n_neurons, constraints, label, model, profile,):
         # Superclasses
         ApplicationVertex.__init__(self, label, constraints)
         AbstractAcceptsIncomingSynapses.__init__(self)
@@ -143,8 +149,6 @@ class SpiNNakEarApplicationVertex(
         # recording flags
         self._is_recording_spikes = False
         self._is_recording_moc = False
-
-        self._seed_index = 0
 
         config = globals_variables.get_simulator().config
         self._time_scale_factor = helpful_functions.read_config_int(
@@ -306,6 +310,74 @@ class SpiNNakEarApplicationVertex(
             edge = MachineEdge(ome_vertex, drnl_vert)
             machine_graph.add_edge(edge, ome_vertex.OME_PARTITION_ID)
 
+    def _build_ihcan_vertices_and_sdram_edges(
+            self, drnl_verts, machine_graph, graph_mapper, current_atom_count,
+            resource_tracker):
+        """ 
+        
+        :param drnl_verts: 
+        :return: iterable of ihcan verts
+        """
+
+        ichans = list()
+
+        # generate ihc seeds
+        n_ihcans = self._model.n_channels * self._model.n_ihc
+        seed_index = 0
+        random_range = numpy.arange(
+            n_ihcans * self._N_SEEDS_PER_IHCAN_VERTEX, dtype=numpy.uint32)
+        numpy.random.seed(self._model.ihc_seeds_seed)
+        ihc_seeds = numpy.random.choice(
+            random_range, int(n_ihcans * self._N_SEEDS_PER_IHCAN_VERTEX),
+            replace=False)
+
+        for drnl_vertex in drnl_verts:
+            fibres = []
+            for _ in range(self._model.n_hsr_per_ihc):
+                fibres.append(self.HSR_FLAG)
+            for __ in range(self._model.n_msr_per_ihc):
+                fibres.append(self.MSR_FLAG)
+            for ___ in range(self._model.n_lsr_per_ihc):
+                fibres.append(self.LSR_FLAG)
+
+            random.seed(self._model.ihcan_fibre_random_seed)
+            random.shuffle(fibres)
+
+            # randomly pick fibre types
+            chosen_indices = [
+                fibres.pop() for _ in range(self._model.n_fibres_per_ihcan)]
+
+            vertex = IHCANMachineVertex(
+                self._model.resample_factor,
+                ihc_seeds[self._seed_index:
+                          self._seed_index + self._N_SEEDS_PER_IHCAN_VERTEX],
+                self._is_recording_spikes, self._model.n_fibres_per_ihcan,
+                self._model.ear_index, True, False, self._model.fs,
+                chosen_indices.count(self.LSR_FLAG),
+                chosen_indices.count(self.MSR_FLAG),
+                chosen_indices.count(self.HSR_FLAG))
+            seed_index += self._N_SEEDS_PER_IHCAN_VERTEX
+            ichans.append(vertex)
+
+            self._add_to_graph_components(
+                machine_graph, graph_mapper, current_atom_count, vertex,
+                resource_tracker)
+
+            # multicast
+            machine_graph.add_edge(
+                MachineEdge(
+                    pre_vertex=drnl_vertex, post_vertex=vertex,
+                    traffic_type=EdgeTrafficType.MULTICAST),
+                partition_name=drnl_vertex.DRNL_PARTITION_ID)
+
+            # sdram edge
+            machine_graph.add_edge(
+                MachineEdge(
+                    pre_vertex=drnl_vertex, post_vertex=vertex,
+                    traffic_type=EdgeTrafficType.SDRAM),
+                partition_name=drnl_vertex.DRNL_PARTITION_ID)
+        return ichans
+
     @inject_items({"machine_time_step": "MachineTimeStep"})
     @overrides(
         HandOverToVertex.create_and_add_to_graphs_and_resources,
@@ -331,13 +403,14 @@ class SpiNNakEarApplicationVertex(
             ome_vertex, drnl_verts, machine_graph)
 
         # build the ihcan verts.
+        ichan_vertices = self._build_ihcan_vertices_and_sdram_edges(
+            drnl_verts, machine_graph, graph_mapper, current_atom_count,
+            resource_tracker)
 
-
-        # handle edges between drnl verts and ihcan verts
-
-        # build aggregation group verts
-
-        # handle edges between ihcan and an groups
+        # build aggregation group verts and edges
+        self._build_aggration_group_vertices_and_edges(
+            ichan_vertices, machine_graph, graph_mapper, current_atom_count,
+            resource_tracker)
 
 
 
@@ -349,28 +422,6 @@ class SpiNNakEarApplicationVertex(
         # ensure lowest parent index (ome) will be first in list
         parent_mvs.sort()
         mv_edges = self._edge_index_list[vertex_slice.lo_atom]
-
-        if mv_type == 'ome':
-            vertex = OMEMachineVertex(
-                self._model.audio_input, self._model.fs,
-                self._model.n_channels, time_scale=self._time_scale_factor,
-                profile=False)
-            vertex.add_constraint(EarConstraint())
-
-        elif mv_type == 'drnl':
-            for parent_index,parent in enumerate(parent_mvs):
-                # first parent will be ome
-                if parent_index in self._ome_indices:
-                    ome = self._mv_list[parent]
-                    vertex = DRNLMachineVertex(
-                        ome, self._model.pole_freqs[self._pole_index], 0.0,
-                        is_recording=self._is_recording_moc,
-                        profile=False, drnl_index=self._pole_index)
-                    self._pole_index += 1
-                else:  # will be a mack vertex
-                    self._mv_list[parent].register_mack_processor(vertex)
-                    vertex.register_parent_processor(self._mv_list[parent])
-            vertex.add_constraint(EarConstraint())
 
         elif 'ihc' in mv_type:#mv_type == 'ihc':
             for parent in parent_mvs:

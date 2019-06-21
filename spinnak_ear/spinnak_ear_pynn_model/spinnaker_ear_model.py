@@ -21,6 +21,7 @@ class SpiNNakEar(AbstractPyNNModel):
     _DEFAULT_NYQUIST_RATIO = 0.5
     _DEFAULT_MAX_AUDIO_FREQUENCY = 17782
     _DEFAULT_MIN_AUDIO_FREQUENCY = 30
+    _DEFAULT_RANDOM_SEED = 44444
 
     # scale max
     FULL_SCALE = 1.0
@@ -47,7 +48,10 @@ class SpiNNakEar(AbstractPyNNModel):
         'n_hsr_per_ihc': _DEFAULT_N_HSR_PER_IHC,
         'nyquist_ratio': _DEFAULT_NYQUIST_RATIO,
         'min_audio_frequency': _DEFAULT_MIN_AUDIO_FREQUENCY,
-        'max_audio_frequency': _DEFAULT_MAX_AUDIO_FREQUENCY
+        'max_audio_frequency': _DEFAULT_MAX_AUDIO_FREQUENCY,
+        'ihcan_fibre_random_seed': _DEFAULT_RANDOM_SEED,
+        '_profile': False,
+        'ihc_seeds_seed': _DEFAULT_RANDOM_SEED
     }
 
     NAME = "SpikeSourceSpiNNakEar"
@@ -84,7 +88,13 @@ class SpiNNakEar(AbstractPyNNModel):
         # min audio freq
         '_min_audio_frequency',
         # max audio freq
-        '_max_audio_frequency'
+        '_max_audio_frequency',
+        #
+        "_ihcan_fibre_random_seed",
+        #
+        "_profile",
+        #
+        "_ihc_seeds_seed",
     ]
 
     def __init__(
@@ -102,7 +112,10 @@ class SpiNNakEar(AbstractPyNNModel):
             n_hsr_per_ihc=DEFAULT_PARAMS['n_hsr_per_ihc'],
             nyquist_ratio=DEFAULT_PARAMS['nyquist_ratio'],
             min_audio_frequency=DEFAULT_PARAMS['min_audio_frequency'],
-            max_audio_frequency=DEFAULT_PARAMS['max_audio_frequency']):
+            max_audio_frequency=DEFAULT_PARAMS['max_audio_frequency'],
+            ihcan_fibre_random_seed=DEFAULT_PARAMS['ihcan_fibre_random_seed'],
+            profile=DEFAULT_PARAMS['profile'],
+            ihc_seeds_seed=DEFAULT_PARAMS['ihc_seeds_seed']):
 
         self._fs = fs
         self._n_channels = int(n_channels)
@@ -119,6 +132,9 @@ class SpiNNakEar(AbstractPyNNModel):
         self._nyquist_ratio = nyquist_ratio
         self._min_audio_frequency = min_audio_frequency
         self._max_audio_frequency = max_audio_frequency
+        self._ihcan_fibre_random_seed = ihcan_fibre_random_seed
+        self._ihc_seeds_seed = ihc_seeds_seed
+        self._profile = profile
 
         if isinstance(audio_input, list):
             audio_input = np.asarray(audio_input)
@@ -148,9 +164,12 @@ class SpiNNakEar(AbstractPyNNModel):
 
     @overrides(AbstractPyNNModel.create_vertex)
     def create_vertex(self, n_neurons, label, constraints):
-
         return SpiNNakEarApplicationVertex(
-            n_neurons,  constraints, label, self)
+            n_neurons,  constraints, label, self, self._profile)
+
+    @property
+    def ihcan_fibre_random_seed(self):
+        return self._ihcan_fibre_random_seed
 
     @staticmethod
     def spinnakear_size_calculator(scale=FULL_SCALE):
@@ -219,4 +238,8 @@ class SpiNNakEar(AbstractPyNNModel):
     @property
     def max_audio_frequency(self):
         return self._max_audio_frequency
+
+    @property
+    def ihc_seeds_seed(self):
+        return self._ihc_seeds_seed
 

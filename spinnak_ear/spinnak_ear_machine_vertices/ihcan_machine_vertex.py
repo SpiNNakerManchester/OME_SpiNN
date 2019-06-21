@@ -1,7 +1,7 @@
+from pacman.model.graphs.common import EdgeTrafficType
 from pacman.model.graphs.machine import MachineVertex
 from pacman.model.resources.resource_container import ResourceContainer
 from pacman.model.resources.dtcm_resource import DTCMResource
-# from pacman.model.resources.sdram_resource import SDRAMResource
 from pacman.model.resources import ConstantSDRAM
 from pacman.model.resources.cpu_cycles_per_tick_resource \
     import CPUCyclesPerTickResource
@@ -36,7 +36,8 @@ from spinn_front_end_common.interface.profiling.profile_data \
 from enum import Enum
 import numpy
 
-from data_specification.constants import APP_PTR_TABLE_BYTE_SIZE
+from spinnak_ear.spinnak_ear_machine_vertices.drnl_machine_vertex import \
+    DRNLMachineVertex
 
 
 class IHCANMachineVertex(
@@ -75,34 +76,32 @@ class IHCANMachineVertex(
                ('RECORDING', 2),
                ('PROFILE', 3)])
 
+    N_FIBRES_ERROR = (
+        "Only {} fibres can be modelled per IHCAN, currently requesting {} "
+        "lsr, {}msr, {}hsr")
+
     SPIKE_RECORDING_REGION_ID = 0
 
-    def __init__(self, drnl,resample_factor,seed,is_recording,
-                 n_fibres=2,ear_index=0,bitfield=True,profile=True,
-                 n_lsr=0,n_msr=0,n_hsr=0):
+    def __init__(
+            self, resample_factor, seed, is_recording, n_fibres, ear_index,
+            bitfield, profile, fs, n_lsr, n_msr, n_hsr, max_n_fibres):
         """
         :param ome: The connected ome vertex    """
 
         MachineVertex.__init__(self, label="IHCAN Node", constraints=None)
         AbstractProvidesNKeysForPartition.__init__(self)
+
         self._is_recording = is_recording
-        # self._minimum_buffer_sdram = minimum_buffer_sdram
-        # self._buffered_sdram_per_timestep = buffered_sdram_per_timestep
-        # self._spike_recorder = spike_recorder
-        # self._buffer_size_before_receive = buffer_size_before_receive
-        # self._max_spikes_per_ts = max_spikes_per_ts
-        # self._maximum_sdram_for_buffering = maximum_sdram_for_buffering
         self._ear_index = ear_index
 
-        self._drnl = drnl
-        self._drnl.register_processor(self)
-        self._resample_factor=resample_factor
-        self._fs=drnl.fs
+        self._re_sample_factor = resample_factor
+        self._fs = fs
         self._n_atoms = n_fibres
 
-        if n_lsr+n_msr+n_hsr > 2:
-            raise Exception("Only 2 fibres can be modelled per IHCAN,"
-                            " currently requesting {}lsr, {}msr, {}hsr".format(n_lsr,n_msr,n_hsr))
+        if n_lsr + n_msr + n_hsr > max_n_fibres:
+            raise Exception(
+                self.N_FIBRES_ERROR.format(max_n_fibres, n_lsr, n_msr, n_hsr))
+
         self._n_lsr = n_lsr
         self._n_msr = n_msr
         self._n_hsr = n_hsr
@@ -132,9 +131,8 @@ class IHCANMachineVertex(
     def resources_required(self):
         sdram = self._N_PARAMETER_BYTES
         sdram += 1 * self._KEY_ELEMENT_TYPE.size
-        sdram += constants.SYSTEM_BYTES_REQUIREMENT + 8
+        sdram += constants.SYSTEM_BYTES_REQUIREMENT
         sdram += self._recording_size
-        sdram += APP_PTR_TABLE_BYTE_SIZE
         if self._profile:
             sdram += profile_utils.get_profile_region_size(self._n_profile_samples)
 
@@ -178,20 +176,27 @@ class IHCANMachineVertex(
     })
     @overrides(
         AbstractGeneratesDataSpecification.generate_data_specification,
-        additional_arguments=["routing_info", "tags", "placements","machine_graph"
-                              ,"machine_time_step","time_scale_factor"])
+        additional_arguments=[
+            "routing_info", "tags", "placements", "machine_graph",
+            "machine_time_step", "time_scale_factor"])
     def generate_data_specification(
-            self, spec, placement, routing_info, tags, placements,machine_graph,
-            machine_time_step,time_scale_factor):
+            self, spec, placement, routing_info, tags, placements,
+            machine_graph, machine_time_step, time_scale_factor):
 
-        DRNL_placement=placements.get_placement_of_vertex(self._drnl).p
+        drnl_processor = None
+        drnl_key = None
+        for edge in machine_graph.get_edges_ending_at_vertex(self):
+            if isinstance(edge.pre_vertex, DRNLMachineVertex):
+                drnl_processor = (
+                    placements.get_placement_of_vertex(edge.pre_vertex).p)
+                if edge.traffic_type == EdgeTrafficType.MULTICAST:
+                    drnl_key = routing_info.get_first_key_for_edge(edge)
 
-        # Setup words + 1 for flags + 1 for recording size
-        setup_size = constants.SYSTEM_BYTES_REQUIREMENT + 8
         # reserve system region
         spec.reserve_memory_region(
             region=self.REGIONS.SYSTEM.value,
-            size=setup_size, label='systemInfo')
+            size=constants.SIMULATION_N_BYTES , label='systemInfo')
+
         # Reserve and write the parameters region
         region_size = self._N_PARAMETER_BYTES
         region_size += 1 * self._KEY_ELEMENT_TYPE.size
@@ -221,24 +226,23 @@ class IHCANMachineVertex(
             self._num_data_points * (float(self._DATA_ELEMENT_TYPE.size) / 4.0),
             data_type=self._DATA_COUNT_TYPE)
 
-        # Write the DRNLCoreID
+        # Write the DRNLCoreID # TODO remove
         spec.write_value(
-            DRNL_placement, data_type=self._COREID_TYPE)
+            drnl_processor, data_type=self._COREID_TYPE)
 
-        # Write the CoreID
+        # Write the CoreID #TODO remove
         spec.write_value(
             placement.p, data_type=self._COREID_TYPE)
 
-        # Write the DRNLAppID
-        spec.write_value(
-            0, data_type=self._COREID_TYPE)
+        # Write the DRNLAppID # TODO remove
+        spec.write_value(0, data_type=self._COREID_TYPE)
 
         # Write the DRNL data key
-        spec.write_value(self._drnl.get_data_key(routing_info))
+        spec.write_value(drnl_key)
 
         # Write the spike resample factor
         spec.write_value(
-            self._resample_factor, data_type=self._COREID_TYPE)
+            self._re_sample_factor, data_type=self._COREID_TYPE)
 
         # Write the sampling frequency
         spec.write_value(

@@ -20,8 +20,6 @@ from spinn_front_end_common.interface.buffer_management \
     import recording_utilities
 from spinn_front_end_common.utilities.constants import BYTES_PER_WORS
 from spinn_front_end_common.utilities.utility_objs import ExecutableType
-from spinn_front_end_common.interface.profiling.profile_data \
-    import ProfileData
 from enum import Enum
 import numpy
 
@@ -29,9 +27,6 @@ from spinn_front_end_common.abstract_models\
     .abstract_provides_n_keys_for_partition \
     import AbstractProvidesNKeysForPartition
 
-from spinn_front_end_common.interface.profiling.abstract_has_profile_data \
-    import AbstractHasProfileData
-from spinn_front_end_common.interface.profiling import profile_utils
 from spinn_front_end_common.utilities import helpful_functions, constants
 from spinn_front_end_common.interface.simulation import simulation_utilities
 from spinnak_ear.spinnak_ear_machine_vertices.abstract_ear_profiled import \
