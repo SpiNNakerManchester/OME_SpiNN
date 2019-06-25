@@ -170,3 +170,96 @@ calc n atoms
             cpu_cycles=CPUCyclesPerTickResource(0))
 
         return container
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         # lookup relevant mv type, parent mv and edges associated with this atom
+        mv_type = self._mv_index_list[vertex_slice.lo_atom]
+        parent_mvs = self._parent_index_list[vertex_slice.lo_atom]
+
+        # ensure lowest parent index (ome) will be first in list
+        parent_mvs.sort()
+        mv_edges = self._edge_index_list[vertex_slice.lo_atom]
+
+
+
+
+
+
+          elif 'ihc' in mv_type:#mv_type == 'ihc':
+            for parent in parent_mvs:
+                n_lsr = int(mv_type[-3])
+                n_msr = int(mv_type[-2])
+                n_hsr = int(mv_type[-1])
+                vertex = IHCANMachineVertex(
+                    self._mv_list[parent], 1,
+                    self._ihc_seeds[self._seed_index:self._seed_index + 4],
+                    self._is_recording_spikes,
+                    ear_index=self._model.ear_index, bitfield=True,
+                    profile=False, n_lsr=n_lsr, n_msr=n_msr, n_hsr=n_hsr)
+                self._seed_index += 4
+
+                # ensure placement is on the same chip as the parent DRNL
+                vertex.add_constraint(
+                    SameChipAsConstraint(self._mv_list[parent]))
+
+        else:  # an_group
+            child_vertices = [
+                self._mv_list[vertex_index] for vertex_index in parent_mvs]
+            row_index = int(mv_type[-1])
+            max_n_atoms = self._max_n_atoms_per_group_tree_row[row_index]
+
+            if len(mv_edges) == 0:
+                # final row AN group
+                is_final_row = True
+            else:
+                is_final_row = False
+
+            vertex = ANGroupMachineVertex(
+                child_vertices, max_n_atoms, is_final_row)
+            vertex.add_constraint(EarConstraint())
+
+        globals_variables.get_simulator().add_machine_vertex(vertex)
+        if len(mv_edges) > 0:
+            for (j, partition_name) in mv_edges:
+                if j > vertex_slice.lo_atom:  # vertex not already built
+                    # add to the "to build" edge list
+                    self._todo_edges.append(
+                        (vertex_slice.lo_atom, j, partition_name))
+                else:
+                    # add edge instance
+                    try:
+                        globals_variables.get_simulator().add_machine_edge(
+                            MachineEdge(
+                                vertex, self._mv_list[j], label="spinnakear"),
+                            partition_name)
+                    except IndexError:
+                        print
+
+        self._mv_list.append(vertex)
+
+        if vertex_slice.lo_atom == self._n_atoms -1:
+            # all vertices have been generated so add all incomplete edges
+            for (source, target, partition_name) in self._todo_edges:
+                globals_variables.get_simulator().add_machine_edge(
+                    MachineEdge(
+                        self._mv_list[source], self._mv_list[target],
+                        label="spinnakear"),
+                    partition_name)
+        return vertex
+

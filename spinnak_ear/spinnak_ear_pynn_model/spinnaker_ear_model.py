@@ -12,6 +12,8 @@ class SpiNNakEar(AbstractPyNNModel):
 
     # defaults magic numbers
     _DEFAULT_N_FIBRES_PER_IHCAN = 2
+    _DEFAULT_MAX_N_FIRES_PER_IHCAN = 2
+    _DEFAULT_MAX_INPUT_TO_AGGREGATION_GROUP = 2
     _DEFAULT_N_LSR_PER_IHC = 2
     _DEFAULT_N_MSR_PER_IHC = 2
     _DEFAULT_N_HSR_PER_IHC = 6
@@ -22,6 +24,7 @@ class SpiNNakEar(AbstractPyNNModel):
     _DEFAULT_MAX_AUDIO_FREQUENCY = 17782
     _DEFAULT_MIN_AUDIO_FREQUENCY = 30
     _DEFAULT_RANDOM_SEED = 44444
+    _DEFAULT_RESAMPLE_FACTOR = 1
 
     # scale max
     FULL_SCALE = 1.0
@@ -50,8 +53,13 @@ class SpiNNakEar(AbstractPyNNModel):
         'min_audio_frequency': _DEFAULT_MIN_AUDIO_FREQUENCY,
         'max_audio_frequency': _DEFAULT_MAX_AUDIO_FREQUENCY,
         'ihcan_fibre_random_seed': _DEFAULT_RANDOM_SEED,
-        '_profile': False,
-        'ihc_seeds_seed': _DEFAULT_RANDOM_SEED
+        'profile': False,
+        'ihc_seeds_seed': _DEFAULT_RANDOM_SEED,
+        'max_n_fibres_per_ihcan': _DEFAULT_MAX_N_FIRES_PER_IHCAN,
+        'max_input_to_aggregation_group':
+            _DEFAULT_MAX_INPUT_TO_AGGREGATION_GROUP,
+        'resample_factor': _DEFAULT_RESAMPLE_FACTOR
+
     }
 
     NAME = "SpikeSourceSpiNNakEar"
@@ -95,6 +103,12 @@ class SpiNNakEar(AbstractPyNNModel):
         "_profile",
         #
         "_ihc_seeds_seed",
+        #
+        "_max_n_fibres_per_ihcan",
+        # number of atoms/ keys to allow each aggregation node to process
+        "_max_input_to_aggregation_group",
+        # resample factor
+        "_resample_factor"
     ]
 
     def __init__(
@@ -115,8 +129,11 @@ class SpiNNakEar(AbstractPyNNModel):
             max_audio_frequency=DEFAULT_PARAMS['max_audio_frequency'],
             ihcan_fibre_random_seed=DEFAULT_PARAMS['ihcan_fibre_random_seed'],
             profile=DEFAULT_PARAMS['profile'],
-            ihc_seeds_seed=DEFAULT_PARAMS['ihc_seeds_seed']):
-
+            ihc_seeds_seed=DEFAULT_PARAMS['ihc_seeds_seed'],
+            max_n_fibres_per_ihcan=DEFAULT_PARAMS['max_n_fibres_per_ihcan'],
+            max_input_to_aggregation_group=DEFAULT_PARAMS[
+                'max_input_to_aggregation_group'],
+            resample_factor=DEFAULT_PARAMS['resample_factor']):
         self._fs = fs
         self._n_channels = int(n_channels)
         self._pole_freqs = pole_freqs
@@ -135,6 +152,9 @@ class SpiNNakEar(AbstractPyNNModel):
         self._ihcan_fibre_random_seed = ihcan_fibre_random_seed
         self._ihc_seeds_seed = ihc_seeds_seed
         self._profile = profile
+        self._max_n_fibres_per_ihcan = max_n_fibres_per_ihcan
+        self._max_input_to_aggregation_group = max_input_to_aggregation_group
+        self._resample_factor = resample_factor
 
         if isinstance(audio_input, list):
             audio_input = np.asarray(audio_input)
@@ -166,6 +186,18 @@ class SpiNNakEar(AbstractPyNNModel):
     def create_vertex(self, n_neurons, label, constraints):
         return SpiNNakEarApplicationVertex(
             n_neurons,  constraints, label, self, self._profile)
+
+    @property
+    def resample_factor(self):
+        return self._resample_factor
+
+    @property
+    def max_n_fibres_per_ihcan(self):
+        return self._max_n_fibres_per_ihcan
+
+    @property
+    def max_input_to_aggregation_group(self):
+        return self._max_input_to_aggregation_group
 
     @property
     def ihcan_fibre_random_seed(self):

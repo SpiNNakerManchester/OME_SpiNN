@@ -63,12 +63,15 @@ class DRNLMachineVertex(
 
     # the outgoing partition id for DRNL
     DRNL_PARTITION_ID = "DRNLData"
+    DRNL_SDRAM_PARTITION_ID = "DRNLSDRAMData"
 
     # The number of bytes for the parameters
     # 1: n data points, 2: ome core, 3. my core, 4: ome app id?? 5: ack key?
     # 6: data key, 7: n ihcans 8: centre freq, 9: delay 10: sampling freq,
     # 11: ome data key, 12: recording flag, 13: n moc mvs, 14: conn lut size
     _N_PARAMETER_BYTES = 14 * BYTES_PER_WORS
+
+    SDRAM_SIZE = 4 * 8 * 4  # circular buffer to IHCs
 
     MOC_RECORDING_REGION_ID = 0
 
@@ -88,7 +91,7 @@ class DRNLMachineVertex(
         """
         MachineVertex.__init__(
             self, label="DRNL Node of {}".format(drnl_index), constraints=None)
-        AbstractEarProfiled.__init__(self, profile, self.REGIONS.Profile.value)
+        AbstractEarProfiled.__init__(self, profile, self.REGIONS.PROFILE.value)
         AbstractProvidesNKeysForPartition.__init__(self)
 
         self._cf = cf
@@ -110,6 +113,10 @@ class DRNLMachineVertex(
 
         # filter params
         self._filter_params = self._calculate_filter_parameters()
+
+    @property
+    def drnl_index(self):
+        return self._drnl_index
 
     def _get_data_key(self, routing_info):
         key = routing_info.get_first_key_from_pre_vertex(
@@ -196,9 +203,6 @@ class DRNLMachineVertex(
         sdram += self._profile_size()
         sdram += self._recording_size
 
-        #TODO i think this is the sdram links
-        sdram += 4 * 8 * 4 #circular buffer to IHCs
-
         resources = ResourceContainer(
             dtcm=DTCMResource(0),
             sdram=ConstantSDRAM(sdram),
@@ -215,7 +219,7 @@ class DRNLMachineVertex(
         return ExecutableType.USES_SIMULATION_INTERFACE
 
     @overrides(AbstractProvidesNKeysForPartition.get_n_keys_for_partition)
-    def get_n_keys_for_partition(self, _, __):
+    def get_n_keys_for_partition(self, partition, graph_mapper):
         return 1
 
     def _reserve_memory_regions(self, spec):
@@ -374,6 +378,6 @@ class DRNLMachineVertex(
         return regions
 
     @overrides(AbstractReceiveBuffersToHost.get_recording_region_base_address)
-    def get_recording_region_base_address(self, transciever, placement):
+    def get_recording_region_base_address(self, txrx, placement):
         return helpful_functions.locate_memory_region_for_placement(
-            placement, self.REGIONS.RECORDING.value, transciever)
+            placement, self.REGIONS.RECORDING.value, txrx)

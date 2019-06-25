@@ -1,4 +1,7 @@
 from pacman.model.graphs.common import Slice, EdgeTrafficType
+from pacman.model.graphs.impl.constant_sdram_machine_partition import \
+    ConstantSDRAMMachinePartition
+from pacman.model.graphs.machine.machine_sdram_edge import SDRAMMachineEdge
 from spinn_front_end_common.abstract_models import AbstractChangableAfterRun
 from spinn_front_end_common.utilities import \
     globals_variables, helpful_functions
@@ -18,7 +21,6 @@ from pacman.model.partitioner_interfaces.hand_over_to_vertex import \
     HandOverToVertex
 from pacman.model.decorators.overrides import overrides
 from pacman.model.graphs.machine.machine_edge import MachineEdge
-from pacman.model.constraints.placer_constraints import SameChipAsConstraint
 from pacman.executor.injection_decorator import inject_items
 
 from spinnak_ear.spinnak_ear_machine_vertices.ome_machine_vertex import \
@@ -61,6 +63,8 @@ class SpiNNakEarApplicationVertex(
         "_is_recording_moc",
         #
         "_ihcan_fibre_random_seed",
+        # the number of columns / rows for aggregation tree
+        "_n_group_tree_rows"
     ]
 
     # NOTES IHC = inner hair cell
@@ -91,14 +95,13 @@ class SpiNNakEarApplicationVertex(
     # recordable units
     _RECORDABLE_UNITS = {
         SPIKES: SPIKES,
-        MOC: ''
+        MOC: '??????'
     }
 
     # n recording regions
     _N_POPULATION_RECORDING_REGIONS = 1
 
     # random numbers
-    _MAX_N_ATOMS_PER_CORE = 2
     _N_SEEDS_PER_IHCAN_VERTEX = 4
     _FINAL_ROW_N_ATOMS = 256
     MAX_TIME_SCALE_FACTOR_RATIO = 22050
@@ -107,7 +110,7 @@ class SpiNNakEarApplicationVertex(
     LSR_FLAG = 0
 
     def __init__(
-            self, n_neurons, constraints, label, model, profile,):
+            self, n_neurons, constraints, label, model, profile):
         # Superclasses
         ApplicationVertex.__init__(self, label, constraints)
         AbstractAcceptsIncomingSynapses.__init__(self)
@@ -129,14 +132,15 @@ class SpiNNakEarApplicationVertex(
             self._model.n_hsr_per_ihc)
 
         # number of columns needed for the aggregation tree
-        n_group_tree_rows = int(numpy.ceil(math.log(
+        atoms_per_row = int(numpy.ceil(math.log(
             (self._model.n_channels * self._n_fibres_per_ihc) /
-            self._model.n_fibres_per_ihcan, self._MAX_N_ATOMS_PER_CORE)))
+            self._model.n_fibres_per_ihcan,
+            self._model.max_input_to_aggregation_group)))
 
         # ????????
         max_n_atoms_per_group_tree_row = (
-            (self._MAX_N_ATOMS_PER_CORE **
-             numpy.arange(1, n_group_tree_rows + 1)) *
+            (self._model.max_input_to_aggregation_group **
+             numpy.arange(1, atoms_per_row + 1)) *
             self._model.n_fibres_per_ihcan)
 
         # ????????????
@@ -144,7 +148,7 @@ class SpiNNakEarApplicationVertex(
             max_n_atoms_per_group_tree_row[
                 max_n_atoms_per_group_tree_row <= self._FINAL_ROW_N_ATOMS]
 
-        n_group_tree_rows = max_n_atoms_per_group_tree_row.size
+        self._n_group_tree_rows = max_n_atoms_per_group_tree_row.size
 
         # recording flags
         self._is_recording_spikes = False
@@ -167,11 +171,11 @@ class SpiNNakEarApplicationVertex(
                 self._ihc_seeds = pre_gen_vars['ihc_seeds']
                 self._ome_indices = pre_gen_vars['ome_indices']
             except:
-                self._n_atoms = self._calculate_n_atoms(n_group_tree_rows)
+                self._n_atoms = self._calculate_n_atoms(atoms_per_row)
                 # save fixed param file
                 self._save_pre_gen_vars(self._model.param_file)
         else:
-            self._n_atoms = self._calculate_n_atoms(n_group_tree_rows)
+            self._n_atoms = self._calculate_n_atoms(atoms_per_row)
 
         #if self._n_atoms != n_neurons:
         #    raise ConfigurationException(
@@ -253,7 +257,7 @@ class SpiNNakEarApplicationVertex(
     def _add_to_graph_components(
             self, machine_graph, graph_mapper, lo_atom, vertex,
             resource_tracker):
-        resource_tracker.resource_tracker.allocate_constrained_resources(
+        resource_tracker.allocate_constrained_resources(
             vertex.resources_required, vertex.constraints)
         machine_graph.add_vertex(vertex)
         graph_mapper.add_vertex_mapping(
@@ -295,6 +299,7 @@ class SpiNNakEarApplicationVertex(
             self._add_to_graph_components(
                 machine_graph, graph_mapper, current_atom_count, drnl_vertex,
                 resource_tracker)
+            drnl_verts.append(drnl_vertex)
         return drnl_verts
 
     def _build_edges_between_ome_drnls(
@@ -332,6 +337,12 @@ class SpiNNakEarApplicationVertex(
             replace=False)
 
         for drnl_vertex in drnl_verts:
+            machine_graph.add_outgoing_edge_partition(
+                ConstantSDRAMMachinePartition(
+                    drnl_vertex.DRNL_SDRAM_PARTITION_ID, drnl_vertex,
+                    "sdram edge between drnl vertex {} and its "
+                    "IHCANS".format(drnl_vertex.drnl_index)))
+
             fibres = []
             for _ in range(self._model.n_hsr_per_ihc):
                 fibres.append(self.HSR_FLAG)
@@ -343,40 +354,91 @@ class SpiNNakEarApplicationVertex(
             random.seed(self._model.ihcan_fibre_random_seed)
             random.shuffle(fibres)
 
-            # randomly pick fibre types
-            chosen_indices = [
-                fibres.pop() for _ in range(self._model.n_fibres_per_ihcan)]
+            for _ in range(self._model.n_ihc):
 
-            vertex = IHCANMachineVertex(
-                self._model.resample_factor,
-                ihc_seeds[self._seed_index:
-                          self._seed_index + self._N_SEEDS_PER_IHCAN_VERTEX],
-                self._is_recording_spikes, self._model.n_fibres_per_ihcan,
-                self._model.ear_index, True, False, self._model.fs,
-                chosen_indices.count(self.LSR_FLAG),
-                chosen_indices.count(self.MSR_FLAG),
-                chosen_indices.count(self.HSR_FLAG))
-            seed_index += self._N_SEEDS_PER_IHCAN_VERTEX
-            ichans.append(vertex)
+                # randomly pick fibre types
+                chosen_indices = [
+                    fibres.pop() for _ in range(self._model.n_fibres_per_ihcan)]
 
-            self._add_to_graph_components(
-                machine_graph, graph_mapper, current_atom_count, vertex,
-                resource_tracker)
+                vertex = IHCANMachineVertex(
+                    self._model.resample_factor,
+                    ihc_seeds[
+                        seed_index:
+                        seed_index + self._N_SEEDS_PER_IHCAN_VERTEX],
+                    self._is_recording_spikes,
+                    self._model.n_fibres_per_ihcan,
+                    self._model.ear_index, True, False, self._model.fs,
+                    chosen_indices.count(self.LSR_FLAG),
+                    chosen_indices.count(self.MSR_FLAG),
+                    chosen_indices.count(self.HSR_FLAG),
+                    self._model.max_n_fibres_per_ihcan,
+                    drnl_vertex.n_data_points)
+                seed_index += self._N_SEEDS_PER_IHCAN_VERTEX
+                ichans.append(vertex)
 
-            # multicast
-            machine_graph.add_edge(
-                MachineEdge(
-                    pre_vertex=drnl_vertex, post_vertex=vertex,
-                    traffic_type=EdgeTrafficType.MULTICAST),
-                partition_name=drnl_vertex.DRNL_PARTITION_ID)
+                self._add_to_graph_components(
+                    machine_graph, graph_mapper, current_atom_count, vertex,
+                    resource_tracker)
 
-            # sdram edge
-            machine_graph.add_edge(
-                MachineEdge(
-                    pre_vertex=drnl_vertex, post_vertex=vertex,
-                    traffic_type=EdgeTrafficType.SDRAM),
-                partition_name=drnl_vertex.DRNL_PARTITION_ID)
+                # multicast
+                machine_graph.add_edge(
+                    MachineEdge(
+                        pre_vertex=drnl_vertex, post_vertex=vertex,
+                        traffic_type=EdgeTrafficType.MULTICAST),
+                    drnl_vertex.DRNL_PARTITION_ID)
+
+                # sdram edge
+                machine_graph.add_edge(
+                    SDRAMMachineEdge(
+                        pre_vertex=drnl_vertex, post_vertex=vertex,
+                        label="sdram between {} and {}".format(
+                            drnl_vertex, vertex),
+                        sdram_size=DRNLMachineVertex.SDRAM_SIZE),
+                    drnl_vertex.DRNL_SDRAM_PARTITION_ID)
         return ichans
+
+    def _build_aggration_group_vertices_and_edges(
+            self, ichan_vertices, machine_graph, graph_mapper,
+            current_atom_count, resource_tracker):
+
+        to_process = ichan_vertices
+        n_child_per_group = self._model.max_input_to_aggregation_group
+
+        for row in range(self._n_group_tree_rows):
+            aggregation_verts = list()
+            n_row_angs = int(
+                numpy.ceil(float(len(to_process)) / n_child_per_group))
+            for an in range(n_row_angs):
+                child_verts = to_process[
+                    an * n_child_per_group:
+                    an * n_child_per_group + n_child_per_group]
+
+                # deduce n atoms of the ag node
+                n_atoms = 0
+                for child in child_verts:
+                    n_atoms += child.n_atoms
+
+                # build vert
+                ag_vertex = ANGroupMachineVertex(
+                    n_atoms, row == self._n_group_tree_rows - 1)
+                aggregation_verts.append(ag_vertex)
+
+                # update stuff
+                self._add_to_graph_components(
+                    machine_graph, graph_mapper, current_atom_count, ag_vertex,
+                    resource_tracker)
+
+                # add edges
+                for child_vert in child_verts:
+                    partition_id = IHCANMachineVertex.IHCAN_PARTITION_ID
+                    if isinstance(child_vert, ANGroupMachineVertex):
+                        partition_id = \
+                            ANGroupMachineVertex.AN_GROUP_PARTITION_IDENTIFER
+                    machine_graph.add_edge(
+                        MachineEdge(
+                            child_vert, ag_vertex, EdgeTrafficType.MULTICAST),
+                        partition_id)
+            to_process = aggregation_verts
 
     @inject_items({"machine_time_step": "MachineTimeStep"})
     @overrides(
@@ -412,79 +474,6 @@ class SpiNNakEarApplicationVertex(
             ichan_vertices, machine_graph, graph_mapper, current_atom_count,
             resource_tracker)
 
-
-
-
-        # lookup relevant mv type, parent mv and edges associated with this atom
-        mv_type = self._mv_index_list[vertex_slice.lo_atom]
-        parent_mvs = self._parent_index_list[vertex_slice.lo_atom]
-
-        # ensure lowest parent index (ome) will be first in list
-        parent_mvs.sort()
-        mv_edges = self._edge_index_list[vertex_slice.lo_atom]
-
-        elif 'ihc' in mv_type:#mv_type == 'ihc':
-            for parent in parent_mvs:
-                n_lsr = int(mv_type[-3])
-                n_msr = int(mv_type[-2])
-                n_hsr = int(mv_type[-1])
-                vertex = IHCANMachineVertex(
-                    self._mv_list[parent], 1,
-                    self._ihc_seeds[self._seed_index:self._seed_index + 4],
-                    self._is_recording_spikes,
-                    ear_index=self._model.ear_index, bitfield=True,
-                    profile=False, n_lsr=n_lsr, n_msr=n_msr, n_hsr=n_hsr)
-                self._seed_index += 4
-
-                # ensure placement is on the same chip as the parent DRNL
-                vertex.add_constraint(
-                    SameChipAsConstraint(self._mv_list[parent]))
-
-        else:  # an_group
-            child_vertices = [
-                self._mv_list[vertex_index] for vertex_index in parent_mvs]
-            row_index = int(mv_type[-1])
-            max_n_atoms = self._max_n_atoms_per_group_tree_row[row_index]
-
-            if len(mv_edges) == 0:
-                # final row AN group
-                is_final_row = True
-            else:
-                is_final_row = False
-
-            vertex = ANGroupMachineVertex(
-                child_vertices, max_n_atoms, is_final_row)
-            vertex.add_constraint(EarConstraint())
-
-        globals_variables.get_simulator().add_machine_vertex(vertex)
-        if len(mv_edges) > 0:
-            for (j, partition_name) in mv_edges:
-                if j > vertex_slice.lo_atom:  # vertex not already built
-                    # add to the "to build" edge list
-                    self._todo_edges.append(
-                        (vertex_slice.lo_atom, j, partition_name))
-                else:
-                    # add edge instance
-                    try:
-                        globals_variables.get_simulator().add_machine_edge(
-                            MachineEdge(
-                                vertex, self._mv_list[j], label="spinnakear"),
-                            partition_name)
-                    except IndexError:
-                        print
-
-        self._mv_list.append(vertex)
-
-        if vertex_slice.lo_atom == self._n_atoms -1:
-            # all vertices have been generated so add all incomplete edges
-            for (source, target, partition_name) in self._todo_edges:
-                globals_variables.get_simulator().add_machine_edge(
-                    MachineEdge(
-                        self._mv_list[source], self._mv_list[target],
-                        label="spinnakear"),
-                    partition_name)
-        return vertex
-
     @property
     @overrides(ApplicationVertex.n_atoms)
     def n_atoms(self):
@@ -504,7 +493,9 @@ class SpiNNakEarApplicationVertex(
         # an group atoms
         for row_index in range(n_group_tree_rows):
             n_row_angs = int(
-                numpy.ceil(float(n_angs) / self._MAX_N_ATOMS_PER_CORE))
+                numpy.ceil(
+                    float(n_angs) /
+                    self._model.max_input_to_aggregation_group))
             n_atoms += n_row_angs
             n_angs = n_row_angs
         return n_atoms
