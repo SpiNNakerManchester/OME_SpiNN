@@ -29,11 +29,15 @@ from spinn_front_end_common.abstract_models\
     import AbstractProvidesNKeysForPartition
 import numpy as np
 
+from spinnak_ear.spinnak_ear_machine_vertices.abstract_ear_profiled import \
+    AbstractEarProfiled
+
 
 class ANGroupMachineVertex(
         MachineVertex, AbstractHasAssociatedBinary,
         AbstractGeneratesDataSpecification,
-        AbstractProvidesNKeysForPartition):
+        AbstractProvidesNKeysForPartition,
+        AbstractEarProfiled):
     """ A vertex that runs the multi-cast acknowledge algorithm
     """
 
@@ -59,6 +63,10 @@ class ANGroupMachineVertex(
         MachineVertex.__init__(self, label="AN Group Node", constraints=None)
         self._n_atoms = n_atoms
         self._is_final_row = is_final_row
+
+    @property
+    def is_final_row(self):
+        return self._is_final_row
 
     def add_child_vertex(self, child):
         self._child_vertices.append(child)
