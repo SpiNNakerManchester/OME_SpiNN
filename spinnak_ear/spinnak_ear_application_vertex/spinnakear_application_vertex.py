@@ -1,12 +1,21 @@
+from pacman.model.graphs.application import ApplicationEdge
 from pacman.model.graphs.common import Slice, EdgeTrafficType
 from pacman.model.graphs.impl.constant_sdram_machine_partition import \
     ConstantSDRAMMachinePartition
 from pacman.model.graphs.machine.machine_sdram_edge import SDRAMMachineEdge
+from pacman.model.partitioner_interfaces.\
+    abstract_controls_destination_of_edges import \
+    AbstractControlsDestinationOfEdges
+from pacman.model.partitioner_interfaces.\
+    abstract_controls_source_of_edges import \
+    AbstractControlsSourceOfEdges
 from spinn_front_end_common.abstract_models import AbstractChangableAfterRun
 from spinn_front_end_common.utilities import \
     globals_variables, helpful_functions
 from spinn_front_end_common.utilities.exceptions import ConfigurationException
 from spinn_front_end_common.utilities.globals_variables import get_simulator
+from spinnak_ear.spinnak_ear_edges.spinnaker_ear_machine_edge import \
+    SpiNNakEarMachineEdge
 
 from spynnaker.pyNN.models.abstract_models.\
     abstract_accepts_incoming_synapses import AbstractAcceptsIncomingSynapses
@@ -20,7 +29,6 @@ from pacman.model.graphs.application.\
 from pacman.model.partitioner_interfaces.hand_over_to_vertex import \
     HandOverToVertex
 from pacman.model.decorators.overrides import overrides
-from pacman.model.graphs.machine.machine_edge import MachineEdge
 from pacman.executor.injection_decorator import inject_items
 
 from spinnak_ear.spinnak_ear_machine_vertices.ome_machine_vertex import \
@@ -42,7 +50,8 @@ logger = logging.getLogger(__name__)
 class SpiNNakEarApplicationVertex(
         ApplicationVertex, AbstractAcceptsIncomingSynapses,
         SimplePopulationSettable, HandOverToVertex, AbstractChangableAfterRun,
-        AbstractSpikeRecordable, AbstractNeuronRecordable):
+        AbstractSpikeRecordable, AbstractNeuronRecordable,
+        AbstractControlsDestinationOfEdges, AbstractControlsSourceOfEdges):
 
     __slots__ = [
         # pynn model
@@ -81,6 +90,12 @@ class SpiNNakEarApplicationVertex(
     # error message for incorrect neurons map
     N_NEURON_ERROR = (
         "the number of neurons {} and the number of atoms  {} do not match")
+
+    # app edge mc partition id
+    MC_APP_EDGE_PARTITION_ID = "internal_mc"
+
+    # app edge sdram partition id
+    SDRAM_APP_EDGE_PARTITION_ID = "internal_sdram"
 
     # recording names
     SPIKES = "spikes"
@@ -184,6 +199,31 @@ class SpiNNakEarApplicationVertex(
     @overrides(AbstractAcceptsIncomingSynapses.get_synapse_id_by_target)
     def get_synapse_id_by_target(self, target):
         return 0
+
+    @overrides(
+        AbstractControlsDestinationOfEdges.get_destinations_for_edge_from)
+    def get_destinations_for_edge_from(
+            self, app_edge, partition_id, graph_mapper):
+        if app_edge.pre_vertex != self and app_edge.post_vertex == self:
+            drnl_verts = list()
+            for machine_vertex in graph_mapper.get_machine_vertices(self):
+                if isinstance(machine_vertex, DRNLMachineVertex):
+                    drnl_verts.append(machine_vertex)
+            return drnl_verts
+        else:
+            return []
+
+    @overrides(AbstractControlsSourceOfEdges.get_sources_for_edge_from)
+    def get_sources_for_edge_from(self, app_edge, partition_id, graph_mapper):
+        if app_edge.pre_vertex == self and app_edge.post_vertex != self:
+            aggreation_verts = list()
+            for machine_vertex in graph_mapper.get_machine_vertices(self):
+                if (isinstance(machine_vertex, ANGroupMachineVertex) and
+                        machine_vertex.is_final_row):
+                    aggreation_verts.append(machine_vertex)
+            return aggreation_verts
+        else:
+            return []
 
     @overrides(
         AbstractAcceptsIncomingSynapses.get_maximum_delay_supported_in_ms)
@@ -303,7 +343,8 @@ class SpiNNakEarApplicationVertex(
         return drnl_verts
 
     def _build_edges_between_ome_drnls(
-            self, ome_vertex, drnl_verts, machine_graph):
+            self, ome_vertex, drnl_verts, machine_graph, app_edge,
+            graph_mapper):
         """
         
         :param ome_vertex: 
@@ -312,12 +353,13 @@ class SpiNNakEarApplicationVertex(
         :return: 
         """
         for drnl_vert in drnl_verts:
-            edge = MachineEdge(ome_vertex, drnl_vert)
+            edge = SpiNNakEarMachineEdge(ome_vertex, drnl_vert)
             machine_graph.add_edge(edge, ome_vertex.OME_PARTITION_ID)
+            graph_mapper.add_edge_mapping(edge, app_edge)
 
     def _build_ihcan_vertices_and_sdram_edges(
             self, drnl_verts, machine_graph, graph_mapper, current_atom_count,
-            resource_tracker):
+            resource_tracker, app_edge, sdram_app_edge):
         """ 
         
         :param drnl_verts: 
@@ -381,25 +423,24 @@ class SpiNNakEarApplicationVertex(
                     resource_tracker)
 
                 # multicast
-                machine_graph.add_edge(
-                    MachineEdge(
-                        pre_vertex=drnl_vertex, post_vertex=vertex,
-                        traffic_type=EdgeTrafficType.MULTICAST),
-                    drnl_vertex.DRNL_PARTITION_ID)
+                mc_edge = SpiNNakEarMachineEdge(
+                    drnl_vertex, vertex, EdgeTrafficType.MULTICAST)
+                machine_graph.add_edge(mc_edge, drnl_vertex.DRNL_PARTITION_ID)
+                graph_mapper.add_edge_mapping(mc_edge, app_edge)
 
                 # sdram edge
+                sdram_edge = SDRAMMachineEdge(
+                    drnl_vertex, vertex,
+                    "sdram between {} and {}".format(drnl_vertex, vertex),
+                    DRNLMachineVertex.SDRAM_SIZE)
                 machine_graph.add_edge(
-                    SDRAMMachineEdge(
-                        pre_vertex=drnl_vertex, post_vertex=vertex,
-                        label="sdram between {} and {}".format(
-                            drnl_vertex, vertex),
-                        sdram_size=DRNLMachineVertex.SDRAM_SIZE),
-                    drnl_vertex.DRNL_SDRAM_PARTITION_ID)
+                    sdram_edge, drnl_vertex.DRNL_SDRAM_PARTITION_ID)
+                graph_mapper.add_edge_mapping(sdram_edge, sdram_app_edge)
         return ichans
 
     def _build_aggration_group_vertices_and_edges(
             self, ichan_vertices, machine_graph, graph_mapper,
-            current_atom_count, resource_tracker):
+            current_atom_count, resource_tracker, app_edge):
 
         to_process = ichan_vertices
         n_child_per_group = self._model.max_input_to_aggregation_group
@@ -430,24 +471,35 @@ class SpiNNakEarApplicationVertex(
 
                 # add edges
                 for child_vert in child_verts:
+                    # sort out partition id
                     partition_id = IHCANMachineVertex.IHCAN_PARTITION_ID
                     if isinstance(child_vert, ANGroupMachineVertex):
                         partition_id = \
                             ANGroupMachineVertex.AN_GROUP_PARTITION_IDENTIFER
-                    machine_graph.add_edge(
-                        MachineEdge(
-                            child_vert, ag_vertex, EdgeTrafficType.MULTICAST),
-                        partition_id)
+
+                    # add edge and mapping
+                    mc_edge = SpiNNakEarMachineEdge(child_vert, ag_vertex)
+                    machine_graph.add_edge(mc_edge, partition_id)
+                    graph_mapper.add_edge_mapping(mc_edge, app_edge)
+
             to_process = aggregation_verts
 
-    @inject_items({"machine_time_step": "MachineTimeStep"})
+    @inject_items({"machine_time_step": "MachineTimeStep",
+                   "application_graph": "MemoryApplicationGraph"})
     @overrides(
         HandOverToVertex.create_and_add_to_graphs_and_resources,
-        additional_arguments={"machine_time_step"}
+        additional_arguments={"machine_time_step", "application_graph"}
     )
     def create_and_add_to_graphs_and_resources(
             self, resource_tracker, machine_graph, graph_mapper,
-            machine_time_step):
+            machine_time_step, application_graph):
+
+        mc_app_edge = ApplicationEdge(self, self)
+        sdram_app_edge = ApplicationEdge(self, self, EdgeTrafficType.SDRAM)
+        application_graph.add_edge(mc_app_edge, self.MC_APP_EDGE_PARTITION_ID)
+        application_graph.add_edge(
+            sdram_app_edge, self.SDRAM_APP_EDGE_PARTITION_ID)
+
         # atom tracker
         current_atom_count = 0
 
@@ -462,17 +514,17 @@ class SpiNNakEarApplicationVertex(
 
         # handle edges between ome and drnls
         self._build_edges_between_ome_drnls(
-            ome_vertex, drnl_verts, machine_graph)
+            ome_vertex, drnl_verts, machine_graph, mc_app_edge, graph_mapper)
 
         # build the ihcan verts.
         ichan_vertices = self._build_ihcan_vertices_and_sdram_edges(
             drnl_verts, machine_graph, graph_mapper, current_atom_count,
-            resource_tracker)
+            resource_tracker, mc_app_edge, sdram_app_edge)
 
         # build aggregation group verts and edges
         self._build_aggration_group_vertices_and_edges(
             ichan_vertices, machine_graph, graph_mapper, current_atom_count,
-            resource_tracker)
+            resource_tracker, mc_app_edge)
 
     @property
     @overrides(ApplicationVertex.n_atoms)
