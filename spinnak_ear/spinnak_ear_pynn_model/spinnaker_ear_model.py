@@ -25,6 +25,7 @@ class SpiNNakEar(AbstractPyNNModel):
     _DEFAULT_MIN_AUDIO_FREQUENCY = 30
     _DEFAULT_RANDOM_SEED = 44444
     _DEFAULT_RESAMPLE_FACTOR = 1
+    _DEFAULT_SEG_SIZE = 8
 
     # scale max
     FULL_SCALE = 1.0
@@ -58,8 +59,8 @@ class SpiNNakEar(AbstractPyNNModel):
         'max_n_fibres_per_ihcan': _DEFAULT_MAX_N_FIRES_PER_IHCAN,
         'max_input_to_aggregation_group':
             _DEFAULT_MAX_INPUT_TO_AGGREGATION_GROUP,
-        'resample_factor': _DEFAULT_RESAMPLE_FACTOR
-
+        'resample_factor': _DEFAULT_RESAMPLE_FACTOR,
+        'seq_size': _DEFAULT_SEG_SIZE
     }
 
     NAME = "SpikeSourceSpiNNakEar"
@@ -108,7 +109,9 @@ class SpiNNakEar(AbstractPyNNModel):
         # number of atoms/ keys to allow each aggregation node to process
         "_max_input_to_aggregation_group",
         # resample factor
-        "_resample_factor"
+        "_resample_factor",
+        #
+        "_seq_size"
     ]
 
     def __init__(
@@ -133,7 +136,8 @@ class SpiNNakEar(AbstractPyNNModel):
             max_n_fibres_per_ihcan=DEFAULT_PARAMS['max_n_fibres_per_ihcan'],
             max_input_to_aggregation_group=DEFAULT_PARAMS[
                 'max_input_to_aggregation_group'],
-            resample_factor=DEFAULT_PARAMS['resample_factor']):
+            resample_factor=DEFAULT_PARAMS['resample_factor'],
+            seq_size=DEFAULT_PARAMS['seq_size']):
         self._fs = fs
         self._n_channels = int(n_channels)
         self._pole_freqs = pole_freqs
@@ -155,6 +159,10 @@ class SpiNNakEar(AbstractPyNNModel):
         self._max_n_fibres_per_ihcan = max_n_fibres_per_ihcan
         self._max_input_to_aggregation_group = max_input_to_aggregation_group
         self._resample_factor = resample_factor
+        self._seq_size = seq_size
+
+        if self._seq_size == 0:
+            raise Exception("The seq size must be greater than 0")
 
         if isinstance(audio_input, list):
             audio_input = np.asarray(audio_input)
@@ -186,6 +194,10 @@ class SpiNNakEar(AbstractPyNNModel):
     def create_vertex(self, n_neurons, label, constraints):
         return SpiNNakEarApplicationVertex(
             n_neurons,  constraints, label, self, self._profile)
+
+    @property
+    def seq_size(self):
+        return self._seq_size
 
     @property
     def resample_factor(self):

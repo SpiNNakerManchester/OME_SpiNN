@@ -1,4 +1,0 @@
-sp 0 0
-sdump ./dump_files/dump1.bin 0x60270b70 0x6078
-
-

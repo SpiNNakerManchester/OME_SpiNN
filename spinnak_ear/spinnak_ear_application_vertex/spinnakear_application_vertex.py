@@ -216,12 +216,12 @@ class SpiNNakEarApplicationVertex(
     @overrides(AbstractControlsSourceOfEdges.get_sources_for_edge_from)
     def get_sources_for_edge_from(self, app_edge, partition_id, graph_mapper):
         if app_edge.pre_vertex == self and app_edge.post_vertex != self:
-            aggreation_verts = list()
+            aggregation_verts = list()
             for machine_vertex in graph_mapper.get_machine_vertices(self):
                 if (isinstance(machine_vertex, ANGroupMachineVertex) and
                         machine_vertex.is_final_row):
-                    aggreation_verts.append(machine_vertex)
-            return aggreation_verts
+                    aggregation_verts.append(machine_vertex)
+            return aggregation_verts
         else:
             return []
 
@@ -334,7 +334,7 @@ class SpiNNakEarApplicationVertex(
             drnl_vertex = DRNLMachineVertex(
                 self._model.pole_freqs[pole_index], 0.0, self._model.fs,
                 ome_vertex.n_data_points, pole_index, self._is_recording_moc,
-                False)
+                False, self._model.seq_size)
             pole_index += 1
             self._add_to_graph_components(
                 machine_graph, graph_mapper, current_atom_count, drnl_vertex,
@@ -342,14 +342,16 @@ class SpiNNakEarApplicationVertex(
             drnl_verts.append(drnl_vertex)
         return drnl_verts
 
+    @staticmethod
     def _build_edges_between_ome_drnls(
-            self, ome_vertex, drnl_verts, machine_graph, app_edge,
-            graph_mapper):
-        """
+            ome_vertex, drnl_verts, machine_graph, app_edge, graph_mapper):
+        """ adds edges between the ome and the drnl vertices
         
-        :param ome_vertex: 
-        :param drnl_verts: 
-        :param machine_graph: 
+        :param ome_vertex: the ome vertex
+        :param drnl_verts: the drnl vertices
+        :param machine_graph: the machine graph
+        :param app_edge: the app edge covering all these edges
+        :param graph_mapper: the graph mapper
         :return: 
         """
         for drnl_vert in drnl_verts:
@@ -432,7 +434,7 @@ class SpiNNakEarApplicationVertex(
                 sdram_edge = SDRAMMachineEdge(
                     drnl_vertex, vertex,
                     "sdram between {} and {}".format(drnl_vertex, vertex),
-                    DRNLMachineVertex.SDRAM_SIZE)
+                    DRNLMachineVertex.sdram_edge_size)
                 machine_graph.add_edge(
                     sdram_edge, drnl_vertex.DRNL_SDRAM_PARTITION_ID)
                 graph_mapper.add_edge_mapping(sdram_edge, sdram_app_edge)
@@ -461,7 +463,8 @@ class SpiNNakEarApplicationVertex(
 
                 # build vert
                 ag_vertex = ANGroupMachineVertex(
-                    n_atoms, row == self._n_group_tree_rows - 1)
+                    n_atoms, len(child_verts),
+                    row == self._n_group_tree_rows - 1)
                 aggregation_verts.append(ag_vertex)
 
                 # update stuff

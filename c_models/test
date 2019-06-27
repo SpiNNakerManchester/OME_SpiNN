@@ -1,7 +1,0 @@
-boot scamp.boot no_wdog.conf
-app_stop 20
-sp 0 0
-app_load ../model_binaries/OME.aplx . 1 20
-@ timed_input_write
-sleep 5
-@ RAM_dump

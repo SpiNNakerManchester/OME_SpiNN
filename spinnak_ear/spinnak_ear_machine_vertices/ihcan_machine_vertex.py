@@ -55,6 +55,7 @@ class IHCANMachineVertex(
     # 10. n lsr, 11. n msr, 12. nhsr, 13,14,15,16 = seed
     _N_PARAMETERS = 16
 
+    # unknown what this magic number is
     MAGIC_1 = 1000.0
 
     # The data type of each data element
@@ -198,11 +199,8 @@ class IHCANMachineVertex(
         spec.write_value(self._fs)
 
         # Write the routing key
-        partition = (
-            machine_graph.get_outgoing_edge_partitions_starting_at_vertex(
-                self)[0])
-        r_info = routing_info.get_routing_info_from_partition(partition)
-        key = r_info.first_key
+        key = routing_info.get_first_key_from_pre_vertex(
+            self, self.IHCAN_PARTITION_ID)
         spec.write_value(key)
 
         # Write is recording bool

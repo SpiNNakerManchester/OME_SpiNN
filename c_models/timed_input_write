@@ -1,3 +1,0 @@
-sp 0 0
-sload ./load_files/load1_1 0x6066b130
-app_sig all 20 sync0

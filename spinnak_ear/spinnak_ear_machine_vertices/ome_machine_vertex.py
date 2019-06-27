@@ -1,9 +1,6 @@
 from pacman.model.graphs.machine import MachineVertex
-from pacman.model.graphs.application import ApplicationVertex
-
 from pacman.model.resources.resource_container import ResourceContainer
 from pacman.model.resources.dtcm_resource import DTCMResource
-# from pacman.model.resources.sdram_resource import SDRAMResource
 from pacman.model.resources import ConstantSDRAM
 from pacman.model.resources.cpu_cycles_per_tick_resource \
     import CPUCyclesPerTickResource
@@ -17,38 +14,23 @@ from spinn_front_end_common.abstract_models.abstract_has_associated_binary \
 from spinn_front_end_common.abstract_models\
     .abstract_generates_data_specification \
     import AbstractGeneratesDataSpecification
-from spinn_front_end_common.interface.buffer_management.buffer_models\
-    .abstract_receive_buffers_to_host import AbstractReceiveBuffersToHost
-from spinn_front_end_common.utilities import helpful_functions
-from spinn_front_end_common.interface.buffer_management \
-    import recording_utilities
 from spinn_front_end_common.utilities.utility_objs import ExecutableType
-from spinn_front_end_common.interface.profiling.profile_data \
-    import ProfileData
-
 from spinn_front_end_common.abstract_models\
     .abstract_provides_n_keys_for_partition \
     import AbstractProvidesNKeysForPartition
+from spinn_front_end_common.utilities import constants
+from spinn_front_end_common.interface.simulation import simulation_utilities
 
+from spinnak_ear.spinnak_ear_machine_vertices.abstract_ear_profiled import \
+    AbstractEarProfiled
 
 from enum import Enum
 import numpy
 import scipy.signal as sig
 
-from spinn_utilities.progress_bar import ProgressBar
-from spinn_front_end_common.utilities import constants
-from spinn_front_end_common.interface.profiling.abstract_has_profile_data \
-    import AbstractHasProfileData
-from spinn_front_end_common.interface.profiling import profile_utils
-from spinn_front_end_common.interface.simulation import simulation_utilities
-from data_specification.constants import APP_PTR_TABLE_BYTE_SIZE
-from spinnak_ear.spinnak_ear_machine_vertices.abstract_ear_profiled import \
-    AbstractEarProfiled
-
 
 class OMEMachineVertex(
-        MachineVertex, AbstractEarProfiled,
-        AbstractHasAssociatedBinary,
+        MachineVertex, AbstractEarProfiled, AbstractHasAssociatedBinary,
         AbstractGeneratesDataSpecification,
         AbstractProvidesNKeysForPartition):
     """ A vertex that runs the OME algorithm

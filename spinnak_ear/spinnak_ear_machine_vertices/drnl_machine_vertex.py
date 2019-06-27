@@ -1,3 +1,4 @@
+from pacman.model.graphs.abstract_sdram_partition import AbstractSDRAMPartition
 from pacman.model.graphs.machine import MachineVertex
 from pacman.model.resources.resource_container import ResourceContainer
 from pacman.model.resources.dtcm_resource import DTCMResource
@@ -20,26 +21,26 @@ from spinn_front_end_common.interface.buffer_management \
     import recording_utilities
 from spinn_front_end_common.utilities.constants import BYTES_PER_WORS
 from spinn_front_end_common.utilities.utility_objs import ExecutableType
-from enum import Enum
-import numpy
-
 from spinn_front_end_common.abstract_models\
     .abstract_provides_n_keys_for_partition \
     import AbstractProvidesNKeysForPartition
-
 from spinn_front_end_common.utilities import helpful_functions, constants
 from spinn_front_end_common.interface.simulation import simulation_utilities
+
+
 from spinnak_ear.spinnak_ear_machine_vertices.abstract_ear_profiled import \
     AbstractEarProfiled
 from spinnak_ear.spinnak_ear_machine_vertices.ome_machine_vertex import \
     OMEMachineVertex
 
+from enum import Enum
+import numpy
+
 
 class DRNLMachineVertex(
         MachineVertex, AbstractHasAssociatedBinary,
         AbstractGeneratesDataSpecification,
-        AbstractProvidesNKeysForPartition,
-        AbstractEarProfiled,
+        AbstractProvidesNKeysForPartition, AbstractEarProfiled,
         AbstractReceiveBuffersToHost):
 
     """ A vertex that runs the DRNL algorithm
@@ -58,7 +59,8 @@ class DRNLMachineVertex(
         "_profile",
         "_n_profile_samples",
         "_process_profile_times",
-        "_filter_params"
+        "_filter_params",
+        "_seq_size"
     ]
 
     # the outgoing partition id for DRNL
@@ -66,25 +68,42 @@ class DRNLMachineVertex(
     DRNL_SDRAM_PARTITION_ID = "DRNLSDRAMData"
 
     # The number of bytes for the parameters
-    # 1: n data points, 2: ome core, 3. my core, 4: ome app id?? 5: ack key?
-    # 6: data key, 7: n ihcans 8: centre freq, 9: delay 10: sampling freq,
-    # 11: ome data key, 12: recording flag, 13: n moc mvs, 14: conn lut size
-    _N_PARAMETER_BYTES = 14 * BYTES_PER_WORS
+    # 1: n data points, 2: data key, 3: centre freq, 4: ome data key,
+    # 5: recording flag, 6: seq size, 7:n buffers in sdram, 8: n mocs,
+    # 9: size of mocs
+    _N_PARAMS = 9
+    _N_PARAMETER_BYTES = _N_PARAMS * BYTES_PER_WORS
 
-    SDRAM_SIZE = 4 * 8 * 4  # circular buffer to IHCs
+    # circular buffer to IHCs
+    N_BUFFERS_IN_SDRAM_TOTAL = 4
 
+    # sdram edge address in sdram
+    SDRAM_EDGE_ADDRESS_SIZE_IN_BYTES = 4
+
+    # n filter params
+    # 1. la1 2. la2 3. lb0 4. lb1 5. nla1 6. nla2 7.nlb0 8. nlb1
+    N_FILTER_PARAMS = 8
+
+    # n bytes for filter param region
+    FILTER_PARAMS_IN_BYTES = (
+        N_FILTER_PARAMS * constants.WORD_TO_BYTE_MULTIPLIER)
+
+    # moc recording id
     MOC_RECORDING_REGION_ID = 0
 
+    # regions
     REGIONS = Enum(
         value="REGIONS",
         names=[('SYSTEM', 0),
                ('PARAMETERS', 1),
-               ('RECORDING', 2),
-               ('PROFILE', 3)])
+               ('FILTER_PARAMS', 2)
+               ('RECORDING', 3),
+               ('PROFILE', 4),
+               ('SDRAM_EDGE_ADDRESS', 5)])
 
     def __init__(
             self, cf, delay, fs, n_data_points, drnl_index, is_recording,
-            profile):
+            profile, seq_size):
         """
 
         :param ome: The connected ome vertex
@@ -99,6 +118,11 @@ class DRNLMachineVertex(
         self._delay = int(delay)
         self._drnl_index = drnl_index
         self._is_recording = is_recording
+        self._seq_size = seq_size
+
+        self._sdram_edge_size = (
+            self.N_BUFFERS_IN_SDRAM_TOTAL * self._seq_size *
+            DataType.FLOAT_64.size)
 
         self._moc_vertices = list()
 
@@ -115,6 +139,10 @@ class DRNLMachineVertex(
         self._filter_params = self._calculate_filter_parameters()
 
     @property
+    def sdram_edge_size(self):
+        return self._sdram_edge_size
+
+    @property
     def drnl_index(self):
         return self._drnl_index
 
@@ -126,11 +154,11 @@ class DRNLMachineVertex(
         return key
 
     def _calculate_filter_parameters(self):
-        """
+        """ magic maths for filter params. 
         
         :return: 
         """
-        dt = 1./self._fs
+        dt = 1.0 / self._fs
         nl_b_wq = 180.0
         nl_b_wp = 0.14
         nlin_bw = nl_b_wp * self._cf + nl_b_wq
@@ -187,20 +215,22 @@ class DRNLMachineVertex(
     def n_data_points(self):
         return self._num_data_points
 
-    def _param_region_size(self):
-        # param region
-        sdram = self._N_PARAMETER_BYTES
-        sdram += len(self._filter_params) * DataType.FLOAT_64.size
-        return sdram
-
     @property
     @overrides(MachineVertex.resources_required)
     def resources_required(self):
         # system region
         sdram = constants.SYSTEM_BYTES_REQUIREMENT
-        # param region
-        sdram += self._param_region_size()
+        # sdram edge address store
+        sdram += self.SDRAM_EDGE_ADDRESS_SIZE_IN_BYTES
+        # the actual size needed by sdram edge
+        sdram += self._sdram_edge_size
+        # filter params
+        sdram += self.FILTER_PARAMS_IN_BYTES
+        # params
+        sdram += self._N_PARAMETER_BYTES
+        # profile
         sdram += self._profile_size()
+        # reocrding
         sdram += self._recording_size
 
         resources = ResourceContainer(
@@ -223,7 +253,12 @@ class DRNLMachineVertex(
         return 1
 
     def _reserve_memory_regions(self, spec):
-        # Setup words + 1 for flags + 1 for recording size
+        """
+        
+        :param spec: 
+        :return: 
+        """
+
         # reserve system region
         spec.reserve_memory_region(
             region=self.REGIONS.SYSTEM.value,
@@ -231,54 +266,45 @@ class DRNLMachineVertex(
 
         # Reserve the parameters region
         spec.reserve_memory_region(
-            self.REGIONS.PARAMETERS.value, self._param_region_size())
+            self.REGIONS.PARAMETERS.value, self._N_PARAMETER_BYTES, "params")
 
         # reserve recording region
         spec.reserve_memory_region(
             self.REGIONS.RECORDING.value,
-            recording_utilities.get_recording_header_size(1))
+            recording_utilities.get_recording_header_size(1),
+            "recording")
+
+        spec.reserve_memory_region(
+            self.REGIONS.SDRAM_EDGE_ADDRESS.value,
+            self.SDRAM_EDGE_ADDRESS_SIZE_IN_BYTES, "sdram edge address")
+
+        spec.reserve_memory_region(
+            self.REGIONS.FILTER_PARAMS.value,
+            self.FILTER_PARAMS_IN_BYTES, "filter params")
 
         # handle profile stuff
         self._reserve_profile_memory_regions(spec)
 
-    def _write_param_region(
-            self, spec, machine_graph, placement, placements, routing_info):
+    def _write_param_region(self, spec, machine_graph, routing_info):
+        """
+        
+        :param spec: 
+        :param machine_graph: 
+        :param routing_info: 
+        :return: 
+        """
         spec.switch_write_focus(self.REGIONS.PARAMETERS.value)
 
         # Write the data size in words
         spec.write_value(self._num_data_points)
 
-        ome_processor = None
         ome_data_key = None
         for edge in machine_graph.get_edges_ending_at_vertex(self):
             if isinstance(edge.pre_vertex, OMEMachineVertex):
-                ome_processor = (
-                    placements.get_placement_of_vertex(edge.pre_vertex).p)
-                ome_data_key = routing_info.get_first_key_for_edge(edge)
-
-        # Write the OMECoreID
-        spec.write_value(ome_processor)
-
-        # Write the CoreID
-        spec.write_value(placement.p)
-
-        # Write the OMEAppID #TODO delete
-        spec.write_value(0)
-
-        # Write the Acknowledge key #TODO delete
-        spec.write_value(0)
+               ome_data_key = routing_info.get_first_key_for_edge(edge)
 
         # Write the key
         spec.write_value(self._get_data_key(routing_info))
-
-        # Write number of ihcans
-        spec.write_value(len(machine_graph.get_edges_starting_at_vertex(self)))
-
-        # Write the centre frequency
-        spec.write_value(self._cf)
-
-        # Write the delay
-        spec.write_value(self._delay)
 
         # Write the sampling frequency
         spec.write_value(self._fs)
@@ -289,14 +315,40 @@ class DRNLMachineVertex(
         # write is recording
         spec.write_value(int(self._is_recording))
 
-        # write the filter params
-        for param in self._filter_params:
-            spec.write_value(param, data_type=DataType.FLOAT_64)
+        # write seq size
+        spec.write_value(self._seq_size)
+
+        # write n buffers
+        spec.write_value(self.N_BUFFERS_IN_SDRAM_TOTAL)
 
         # Write the number of mocs
         spec.write_value(0)
         # Write the size of the conn LUT
         spec.write_value(0)
+
+    def _write_sdram_edge_rgion(self, spec, machine_graph):
+        """
+        
+        :param spec: 
+        :param machine_graph: 
+        :return: 
+        """
+        for edge in machine_graph.get_edges_starting_at_vertex(self):
+            partition = machine_graph.get_outgoing_partition_for_edge(edge)
+            if isinstance(partition, AbstractSDRAMPartition):
+                spec.write_value(partition.sdram_base_address)
+                spec.write_value(partition.total_sdram_requirements)
+                break
+
+    def _write_filter_params(self, spec):
+        """
+        
+        :param spec: 
+        :return: 
+        """
+        spec.switch_write_focus(self.REGIONS.FILTER_PARAMS.value)
+        for param in self._filter_params:
+            spec.write_value(param, data_type=DataType.FLOAT_64)
 
     @inject_items({
         "machine_time_step": "MachineTimeStep",
@@ -325,8 +377,13 @@ class DRNLMachineVertex(
             time_scale_factor))
 
         # params
-        self._write_param_region(
-            spec, machine_graph, placement, placements, routing_info)
+        self._write_param_region(spec, machine_graph, routing_info)
+
+        # write the filter params
+        self._write_filter_params(spec)
+
+        # sdram edge
+        self._write_sdram_edge_rgion(spec, machine_graph)
 
         # only write params if used
         self._write_profile_dsg(spec)

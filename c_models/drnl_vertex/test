@@ -1,7 +1,0 @@
-boot scamp.boot no_wdog.conf
-app_stop 20
-sp 0 0
-@ application_load_single_chip
-@ timed_input_write
-sleep 5
-@ RAM_dump
