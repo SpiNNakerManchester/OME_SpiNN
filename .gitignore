@@ -6,7 +6,6 @@
 /.idea
 *_local
 *_samples
-*.wav
 *.pyc
 *.o
 *.class
