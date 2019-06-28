@@ -8,6 +8,8 @@ from pacman.model.resources.cpu_cycles_per_tick_resource \
 from pacman.model.decorators.overrides import overrides
 from pacman.executor.injection_decorator import inject_items
 
+from spinn_utilities.log import FormatAdapter
+
 from data_specification.enums.data_type import DataType
 
 from spinn_front_end_common.abstract_models.abstract_has_associated_binary \
@@ -27,7 +29,6 @@ from spinn_front_end_common.abstract_models\
 from spinn_front_end_common.utilities import helpful_functions, constants
 from spinn_front_end_common.interface.simulation import simulation_utilities
 
-
 from spinnak_ear.spinnak_ear_machine_vertices.abstract_ear_profiled import \
     AbstractEarProfiled
 from spinnak_ear.spinnak_ear_machine_vertices.ome_machine_vertex import \
@@ -35,6 +36,9 @@ from spinnak_ear.spinnak_ear_machine_vertices.ome_machine_vertex import \
 
 from enum import Enum
 import numpy
+import logging
+
+logger = FormatAdapter(logging.getLogger(__name__))
 
 
 class DRNLMachineVertex(
@@ -62,6 +66,10 @@ class DRNLMachineVertex(
         "_filter_params",
         "_seq_size"
     ]
+
+    FAIL_TO_RECORD_MESSAGE = (
+        "recording not complete, reduce Fs or disable RT!\n recorded output "
+        "length:{}, expected length:{} at placement:{},{},{}")
 
     # the outgoing partition id for DRNL
     DRNL_PARTITION_ID = "DRNLData"
@@ -414,15 +422,11 @@ class DRNLMachineVertex(
 
         # check all expected data has been recorded
         if output_length != self._n_moc_data_points:
-            # if not set output to zeros of correct length, this will cause
-            # an error flag in run_ear.py raise Warning
-            print(
-                "recording not complete, reduce Fs or disable RT!\n"
-                "recorded output length:{}, expected length:{} "
-                "at placement:{},{},{}".format(
-                    len(output_data), self._n_moc_data_points, placement.x,
-                    placement.y, placement.p))
-
+            # if not set output to zeros of correct length, then failed to
+            # fully record
+            logger.error(self.FAIL_TO_RECORD_MESSAGE.format(
+                len(output_data), self._n_moc_data_points, placement.x,
+                placement.y, placement.p))
             output_data.resize(self._n_moc_data_points, refcheck=False)
         return output_data
 
