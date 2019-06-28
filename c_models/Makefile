@@ -1,4 +1,4 @@
-APPS = ome_vertex.mk ihcan_vertex.mk drnl_vertex.mk an_vertex.mk
+APPS = drnl_vertex.mk ome_vertex.mk ihcan_vertex.mk an_vertex.mk
 
 all: $(APPS)
 	for f in $(APPS); do $(MAKE) -f $$f || exit $$?; done
