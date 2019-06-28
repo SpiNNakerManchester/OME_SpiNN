@@ -104,7 +104,7 @@ class DRNLMachineVertex(
         value="REGIONS",
         names=[('SYSTEM', 0),
                ('PARAMETERS', 1),
-               ('FILTER_PARAMS', 2)
+               ('FILTER_PARAMS', 2),
                ('RECORDING', 3),
                ('PROFILE', 4),
                ('SDRAM_EDGE_ADDRESS', 5)])
