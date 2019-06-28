@@ -20,7 +20,6 @@
 #include "log.h"
 #include <data_specification.h>
 #include <profiler.h>
-#include <profile_tags.h>
 #include <simulation.h>
 #include <recording.h>
 #include <debug.h>
@@ -52,7 +51,6 @@ uint moc_i = 0;
 uint moc_write_switch = 0;
 uint moc_resample_factor;
 uint moc_sample_count = 0;
-uint moc_seg_index = 0;
 uint mc_tx_count = 0;
 bool app_complete = false;
 
@@ -114,7 +112,7 @@ uint32_t time;
 
 //! \brief Initialises the recording parts of the model
 //! \return True if recording initialisation is successful, false otherwise
-static bool initialise_recording(){
+static bool initialise_recording() {
     address_t address = data_specification_get_data_address();
     address_t recording_region = data_specification_get_region(
             RECORDING, address);
@@ -126,8 +124,7 @@ static bool initialise_recording(){
     return success;
 }
 //application initialisation
-bool app_init(uint32_t *timer_period)
-{
+bool app_init(uint32_t *timer_period) {
 	seg_index = 0;
 	read_switch = 0;
 	write_switch = 0;
@@ -139,7 +136,7 @@ bool app_init(uint32_t *timer_period)
     if (!simulation_initialise(
             data_specification_get_region(SYSTEM, data_address),
             APPLICATION_NAME_HASH, timer_period, &simulation_ticks,
-            NULL, 1, 0)) {
+            NULL, SDP_PRIORITY, DMA_TRANSFER_DONE_PRIORITY)) {
         return false;
     }
 
@@ -148,20 +145,19 @@ bool app_init(uint32_t *timer_period)
         sizeof(parameters_struct));
 
     log_info("is rec:%d", parameters.is_recording);
-    record
-    if (parameters.is_recording){
-        if (!initialise_recording()){
+    if (parameters.is_recording) {
+        if (!initialise_recording()) {
             log_error("failed to set up recording");
             return false;
         }
     }
     
     //Get sampling frequency
-    sampling_frequency = parameters.fs;
+    uint sampling_frequency = parameters.fs;
     REAL fs = (REAL) sampling_frequency;
 	REAL dt = (1.0 / fs);
 
-    moc_resample_factor = (fs / 1000.0);
+    moc_resample_factor = (fs / MOC_RESAMPLE_FACTOR_CONVERTER);
     log_info("moc resample factor =%d\n", moc_resample_factor);
 
 	log_info("ome_data_key=%d\n", parameters.ome_data_key);
@@ -185,7 +181,7 @@ bool app_init(uint32_t *timer_period)
     spin1_memcpy(moc_conn_lut, &(moc_conn_lut_address[2]),
         n_conn_lut_bytes);
 
-    for (uint i = 0; i < n_conn_lut_words; i++){
+    for (uint i = 0; i < n_conn_lut_words; i++) {
         log_info("conn_lut entry: 0x%x", moc_conn_lut[i]);
     }
 
@@ -194,7 +190,7 @@ bool app_init(uint32_t *timer_period)
         &(moc_conn_lut_address[2 + n_conn_lut_words]),
         n_key_mask_table_bytes);
 
-    for (uint i = 0; i < n_mocs; i++){
+    for (uint i = 0; i < n_mocs; i++) {
         log_info(
             "key: %d mask: 0x%x count:%d",
             key_mask_table[i].key, key_mask_table[i].mask,
@@ -255,7 +251,7 @@ bool app_init(uint32_t *timer_period)
 		}
 
 		for (uint i = 0; i < sdram_params.sdram_edge_size / sizeof(REAL);
-		        i++){
+		        i++) {
 			sdram_out_buffer[i] = 0;
 		}
 
@@ -331,14 +327,15 @@ bool check_incoming_spike_id(uint spike){
     while (imin < imax) {
         int imid = (imax + imin) >> 1;
         key_mask_table_entry entry = key_mask_table[imid];
-        if ((spike & entry.mask) == entry.key){
+        if ((spike & entry.mask) == entry.key) {
             uint neuron_id = spike & ~entry.mask;
             last_neuron_info.e_index = entry.conn_index;
             last_neuron_info.w_index = neuron_id / BITS_IN_WORD;
             last_neuron_info.id_shift =
                 BITS_IN_WORD - 1 -(neuron_id % BITS_IN_WORD);
-	        return(moc_conn_lut[
-	            last_neuron_info.e_index + last_neuron_info.w_index] &
+	        return(
+	            moc_conn_lut[last_neuron_info.e_index +
+	                         last_neuron_info.w_index] &
 	            ((uint32_t)1 << last_neuron_info.id_shift));
         }
         else if (entry.key < spike) {
@@ -355,7 +352,7 @@ bool check_incoming_spike_id(uint spike){
     return false;
 }
 
-void update_moc_buffer(uint sc){
+void update_moc_buffer(uint sc) {
     moc_count_buffer[moc_buffer_index] = sc;
     moc_buffer_index++;
     if (moc_buffer_index >= MOC_DELAY_ARRAY_LEN){
@@ -363,11 +360,11 @@ void update_moc_buffer(uint sc){
     }
 }
 
-uint get_current_moc_spike_count(){
+uint get_current_moc_spike_count() {
     int index_diff = moc_buffer_index - MOC_DELAY;
     uint delayed_index;
     
-    if (index_diff < 0){
+    if (index_diff < 0) {
         //wrap around
         delayed_index = (MOC_DELAY_ARRAY_LEN - 1) + index_diff;
     }
@@ -378,26 +375,21 @@ uint get_current_moc_spike_count(){
     return moc_count_buffer[delayed_index];
 }
 
-recording_complete_callback_t record_finished(void)
-{
-    moc_seg_index++;
-}
-
 void data_write(uint null_a, uint null_b)
 {
+	use(null_a);
+	use(null_b);
+
 	REAL *dtcm_buffer_out;
 	REAL *dtcm_buffer_moc;
 	uint out_index;
 	
-	if(test_dma == TRUE)
-	{
-		if(!write_switch)
-		{
+	if(test_dma == TRUE) {
+		if(!write_switch) {
 			out_index = index_x;
 			dtcm_buffer_out = dtcm_buffer_x;
 		}
-		else
-		{
+		else {
 			out_index = index_y;
 			dtcm_buffer_out = dtcm_buffer_y;
 		}
@@ -410,7 +402,7 @@ void data_write(uint null_a, uint null_b)
         //flip write buffers
         write_switch = !write_switch;
 
-		if(moc_i>=MOC_BUFFER_SIZE){
+		if (moc_i>=MOC_BUFFER_SIZE) {
 
 		    if (!moc_write_switch){
 		        dtcm_buffer_moc=dtcm_buffer_moc_x;
@@ -419,8 +411,8 @@ void data_write(uint null_a, uint null_b)
 		        dtcm_buffer_moc=dtcm_buffer_moc_y;
 		    }
 
-            recording_record_and_notify(
-                0, dtcm_buffer_moc, moc_seg_output_n_bytes, record_finished);
+            recording_record(
+                MOC_RECORDING_REGION, dtcm_buffer_moc, moc_seg_output_n_bytes);
 
             //flip moc_write buffers
             moc_write_switch = !moc_write_switch;
@@ -495,7 +487,7 @@ uint process_chan(REAL *out_buffer, float *in_buffer, REAL *moc_out_buffer) {
 
 		//MOC efferent effects
 		REAL cur_moc_spike_count = (REAL) get_current_moc_spike_count();
-		if (cur_moc_spike_count < 0){
+		if (cur_moc_spike_count < 0) {
 		    log_info("-ve moc_n%d", moc_spike_count);
 		}
 
@@ -505,11 +497,11 @@ uint process_chan(REAL *out_buffer, float *in_buffer, REAL *moc_out_buffer) {
 
         moc = 1.0 / (1 + moc_now_1 + moc_now_2 + moc_now_4);
 
-        if (moc > 1.0){
+        if (moc > 1.0) {
             log_info("out of bounds moc_n%d", moc);
         }
 
-        if (moc < 0.0){
+        if (moc < 0.0) {
             log_info("out of bounds moc_n%d", moc);
         }
 		non_linout_2a *= moc;
@@ -567,6 +559,9 @@ uint process_chan(REAL *out_buffer, float *in_buffer, REAL *moc_out_buffer) {
 
 void app_end(uint null_a, uint null_b)
 {
+    use(null_a);
+	use(null_b);
+
     recording_finalise();
     log_info("total simulation ticks = %d", simulation_ticks);
     log_info("processed %d segments",seg_index);
@@ -578,53 +573,62 @@ void app_end(uint null_a, uint null_b)
     simulation_ready_to_read();
 }
 
-void process_handler(uint null_a,uint null_b)
+void process_handler(uint null_a, uint null_b)
 {
-        REAL *dtcm_moc;
-		seg_index++;
-		if (!moc_write_switch){
-		    dtcm_moc = dtcm_buffer_moc_x;
-		}
-		else dtcm_moc = dtcm_buffer_moc_y;
+    use(null_a);
+	use(null_b);
 
-		//choose current buffers
-		if(!read_switch && !write_switch){
-			index_x = process_chan(dtcm_buffer_x, dtcm_buffer_b, dtcm_moc);
-		}
-		else if(!read_switch && write_switch){
-			index_y = process_chan(dtcm_buffer_y, dtcm_buffer_b, dtcm_moc);
-		}
-		else if(read_switch && !write_switch){
-			index_x = process_chan(dtcm_buffer_x, dtcm_buffer_a, dtcm_moc);
-		}
-		else{
-			index_y = process_chan(dtcm_buffer_y, dtcm_buffer_a, dtcm_moc);
-		}
-        spin1_trigger_user_event(NULL, NULL);
+    REAL *dtcm_moc;
+    seg_index++;
+
+    if (!moc_write_switch){
+        dtcm_moc = dtcm_buffer_moc_x;
+    }
+    else {
+        dtcm_moc = dtcm_buffer_moc_y;
+    }
+
+    //choose current buffers
+    if(!read_switch && !write_switch){
+        index_x = process_chan(dtcm_buffer_x, dtcm_buffer_b, dtcm_moc);
+    } else if(!read_switch && write_switch){
+        index_y = process_chan(dtcm_buffer_y, dtcm_buffer_b, dtcm_moc);
+    } else if(read_switch && !write_switch){
+        index_x = process_chan(dtcm_buffer_x, dtcm_buffer_a, dtcm_moc);
+    } else{
+        index_y = process_chan(dtcm_buffer_y, dtcm_buffer_a, dtcm_moc);
+    }
+    spin1_trigger_user_event(FILLER_ARG, FILLER_ARG);
 }
 
-void write_complete(uint tid, uint ttag)
-{
+void write_complete(uint tid, uint ttag) {
+    use(tid);
+	use(ttag);
+
+	// profiler
     #ifdef PROFILE
-    profiler_write_entry_disable_irq_fiq(PROFILER_EXIT | PROFILER_TIMER);
+        profiler_write_entry_disable_irq_fiq(PROFILER_EXIT | PROFILER_TIMER);
     #endif
+
     //send MC packet to connected IHC/AN models
     mc_tx_count++;
-    while (!spin1_send_mc_packet(parameters.key, 0, NO_PAYLOAD))
-    {
+    while (!spin1_send_mc_packet(parameters.key, FILLER_ARG, NO_PAYLOAD)) {
         spin1_delay_us(1);
     }
 }
 
-void spike_check(uint32_t rx_key, uint null){
+void spike_check(uint32_t rx_key, uint null_a){
+    use(null_a);
     if (check_incoming_spike_id(rx_key)){
         moc_spike_count++;
     }
 }
 
-void moc_spike_received(uint mc_key, uint null)
-{
-    spin1_schedule_callback(spike_check, mc_key, NULL, 1);
+void moc_spike_received(uint mc_key, uint null_a) {
+    use(null_a);
+
+    spin1_schedule_callback(
+        (callback_t) spike_check, mc_key, FILLER_ARG, SPIKE_CHECK_PRIORITY);
     if (!rx_any_spikes){
         rx_any_spikes = 1;
     }
@@ -656,7 +660,9 @@ void data_read(uint mc_key, uint payload) {
                 if(mc_seg_idx >= parameters.seq_size) {
                     mc_seg_idx = 0;
                     read_switch = 1;
-                    spin1_schedule_callback(process_handler, 0, 0, 1);
+                    spin1_schedule_callback(
+                        process_handler, FILLER_ARG, FILLER_ARG,
+                        PROCESS_HANDLER_PRIORITY);
                 }
             }
             else {
@@ -667,39 +673,42 @@ void data_read(uint mc_key, uint payload) {
                 {
                     mc_seg_idx = 0;
                     read_switch = 0;
-                    spin1_schedule_callback(process_handler, 0, 0, 1);
+                    spin1_schedule_callback(
+                        process_handler, FILLER_ARG, FILLER_ARG,
+                        PROCESS_HANDLER_PRIORITY);
                 }
             }
         }
     }
 }
 
-void app_done ()
-{
+void app_done () {
     #ifdef PROFILE
 	profiler_finalise();
     #endif
 }
 
-void count_ticks(uint null_a, uint null_b){
+void count_ticks(uint null_a, uint null_b) {
+    use(null_a);
+	use(null_b);
 
     update_moc_buffer(moc_spike_count);
     moc_spike_count = 0;
     time++;
     if (time > simulation_ticks && !app_complete){
-        spin1_schedule_callback(app_end, NULL, NULL, 2);
+        spin1_schedule_callback(
+            app_end, FILLER_ARG, FILLER_ARG, APP_END_PRIORITY);
     }
 }
 
-void c_main()
-{
+void c_main() {
     // Get core and chip IDs
     uint32_t timer_period;
 
     // Start the time at "-1" so that the first tick will be 0
     time = UINT32_MAX;
 
-    if(app_init(&timer_period)){
+    if (app_init(&timer_period)) {
         // Set timer tick (in microseconds)
         log_info(
             "setting timer tick callback for %d microseconds", timer_period);
@@ -708,10 +717,11 @@ void c_main()
         //setup callbacks
         //process channel once data input has been read to DTCM
         simulation_dma_transfer_done_callback_on(DMA_WRITE, write_complete);
-        spin1_callback_on(MCPL_PACKET_RECEIVED, data_read, -1);
-        spin1_callback_on(MC_PACKET_RECEIVED, moc_spike_received, -1);
-        spin1_callback_on(USER_EVENT,data_write, 0);
-        spin1_callback_on(TIMER_TICK,count_ticks, 0);
+        spin1_callback_on(MCPL_PACKET_RECEIVED, data_read, MC_PACKET_PRIORITY);
+        spin1_callback_on(
+            MC_PACKET_RECEIVED, moc_spike_received, MC_PACKET_PRIORITY);
+        spin1_callback_on(USER_EVENT, data_write, DATA_WRITE_PRIORITY);
+        spin1_callback_on(TIMER_TICK, count_ticks, COUNT_TICKS_PRIORITY);
 
         simulation_run();
     }
