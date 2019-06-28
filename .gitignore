@@ -8,3 +8,15 @@
 *_samples
 *.wav
 *.pyc
+*.o
+*.class
+*modified_src/
+*.dict
+*build/
+.project
+.pydevproject
+.pytest_cache/
+.idea
+*.pyc
+/.cache
+.coverage
