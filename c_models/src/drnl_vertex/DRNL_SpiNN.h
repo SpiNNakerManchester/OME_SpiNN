@@ -70,8 +70,7 @@ typedef enum priorities {
 #define SIGN(x) (((x)<0) ? -(1.0) : (1.0))
 
 // union from float and uint32. for transmission and reception
-typedef union
-{
+typedef union {
 	uint32_t u;
 	float f;
 } uint_float_union;

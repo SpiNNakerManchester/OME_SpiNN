@@ -59,11 +59,11 @@ REAL moc_now_1;
 REAL moc_now_2;
 REAL moc_now_4;
 REAL moc_dec_1;
-REAL moc_dec_2; 
+REAL moc_dec_2;
 REAL moc_dec_3;
 REAL moc_factor_1;
-REAL moc_factor_2; 
-REAL moc_factor_3; 
+REAL moc_factor_2;
+REAL moc_factor_3;
 
 REAL lin_x1;
 REAL lin_y1[2];
@@ -333,7 +333,7 @@ bool check_incoming_spike_id(uint spike){
             last_neuron_info.w_index = neuron_id / BITS_IN_WORD;
             last_neuron_info.id_shift =
                 BITS_IN_WORD - 1 -(neuron_id % BITS_IN_WORD);
-	        return(
+	        return (
 	            moc_conn_lut[last_neuron_info.e_index +
 	                         last_neuron_info.w_index] &
 	            ((uint32_t)1 << last_neuron_info.id_shift));
@@ -348,7 +348,7 @@ bool check_incoming_spike_id(uint spike){
             imax = imid;
         }
     }
-    log_info("rx spike: %u not in pop table!",spike);
+    log_info("rx spike: %u not in pop table!", spike);
     return false;
 }
 
@@ -384,8 +384,8 @@ void data_write(uint null_a, uint null_b)
 	REAL *dtcm_buffer_moc;
 	uint out_index;
 	
-	if(test_dma == TRUE) {
-		if(!write_switch) {
+	if (test_dma == TRUE) {
+		if (!write_switch) {
 			out_index = index_x;
 			dtcm_buffer_out = dtcm_buffer_x;
 		}
@@ -427,22 +427,21 @@ uint process_chan(REAL *out_buffer, float *in_buffer, REAL *moc_out_buffer) {
 	        (seg_index - 1) & (parameters.n_buffers_in_sdram - 1));
 
 	uint i;
-	REAL linout1; 
-	REAL linout2; 
+	REAL linout1;
+	REAL linout2;
 	REAL nonlinout1a;
 	REAL non_linout_2a;
-	REAL non_linout_1b; 
-	REAL non_linout_2b; 
-	REAL abs_x; 
+	REAL non_linout_1b;
+	REAL non_linout_2b;
+	REAL abs_x;
 	REAL compressed_non_lin;
 	REAL filter_1;
 
 	//TODO: change MOC method to a synapse model
 	for (i = 0; i < parameters.seq_size; i++) {
-		
 		//Linear Path
         filter_1 =
-            filter_params.lb0 * in_buffer[i] + 
+            filter_params.lb0 * in_buffer[i] +
             filter_params.lb1 * lin_x1;
         linout1 =
             filter_1 - filter_params.la1 * lin_y1[1] -
@@ -458,7 +457,7 @@ uint process_chan(REAL *out_buffer, float *in_buffer, REAL *moc_out_buffer) {
         linout2 =
             filter_1 - filter_params.la1 * lin_y2[1] -
             filter_params.la2 * lin_y2[0];
-		
+
 		lin_y2[0] = lin_y2[1];
 		lin_y2[1] = linout2;
 
@@ -509,7 +508,7 @@ uint process_chan(REAL *out_buffer, float *in_buffer, REAL *moc_out_buffer) {
 		//stage 2
 		abs_x = ABS(non_linout_2a);
 
-		if(abs_x < DISP_THRESH) {			
+		if (abs_x < DISP_THRESH) {
 			compressed_non_lin = A * non_linout_2a;
 		}
 		else {
@@ -519,22 +518,22 @@ uint process_chan(REAL *out_buffer, float *in_buffer, REAL *moc_out_buffer) {
 		}
 
 		//stage 3
-        filter_1 = 
-            filter_params.nlb0 * compressed_non_lin +  
+        filter_1 =
+            filter_params.nlb0 * compressed_non_lin +
             filter_params.nlb1 * nlin_x1b;
-        non_linout_1b = 
-            filter_1 - filter_params.nla1 * nlin_y1b[1] - 
+        non_linout_1b =
+            filter_1 - filter_params.nla1 * nlin_y1b[1] -
             filter_params.nla2 * nlin_y1b[0];
 
 		nlin_x1b = compressed_non_lin;
 		nlin_y1b[0] = nlin_y1b[1];
 		nlin_y1b[1] = non_linout_1b;
 
-        filter_1 = 
-            filter_params.nlb0 * non_linout_1b + 
+        filter_1 =
+            filter_params.nlb0 * non_linout_1b +
             filter_params.nlb1 * nlin_y1b[0];
-        non_linout_2b = 
-            filter_1 - filter_params.nla1 * nlin_y2b[1] - 
+        non_linout_2b =
+            filter_1 - filter_params.nla1 * nlin_y2b[1] -
             filter_params.nla2 * nlin_y2b[0];
 
 		nlin_y2b[0] = nlin_y2b[1];
@@ -545,7 +544,7 @@ uint process_chan(REAL *out_buffer, float *in_buffer, REAL *moc_out_buffer) {
 
 		//if recording MOC
 		moc_sample_count++;
-		if(moc_sample_count == moc_resample_factor){
+		if (moc_sample_count == moc_resample_factor){
 		    moc_out_buffer[moc_i] = moc;
 		    if (moc != 1.0){
 		        moc_changed = 1;
@@ -564,11 +563,11 @@ void app_end(uint null_a, uint null_b)
 
     recording_finalise();
     log_info("total simulation ticks = %d", simulation_ticks);
-    log_info("processed %d segments",seg_index);
-    log_info("sent %d mc packets",mc_tx_count);
+    log_info("processed %d segments", seg_index);
+    log_info("sent %d mc packets", mc_tx_count);
     log_info("spinn_exit\n");
-    log_info("rx any spikes = %d",rx_any_spikes);
-    log_info("moc changed = %d",moc_changed);
+    log_info("rx any spikes = %d", rx_any_spikes);
+    log_info("moc changed = %d", moc_changed);
     app_complete = true;
     simulation_ready_to_read();
 }
@@ -589,11 +588,11 @@ void process_handler(uint null_a, uint null_b)
     }
 
     //choose current buffers
-    if(!read_switch && !write_switch){
+    if (!read_switch && !write_switch){
         index_x = process_chan(dtcm_buffer_x, dtcm_buffer_b, dtcm_moc);
-    } else if(!read_switch && write_switch){
+    } else if (!read_switch && write_switch){
         index_y = process_chan(dtcm_buffer_y, dtcm_buffer_b, dtcm_moc);
-    } else if(read_switch && !write_switch){
+    } else if (read_switch && !write_switch){
         index_x = process_chan(dtcm_buffer_x, dtcm_buffer_a, dtcm_moc);
     } else{
         index_y = process_chan(dtcm_buffer_y, dtcm_buffer_a, dtcm_moc);
@@ -617,7 +616,7 @@ void write_complete(uint tid, uint ttag) {
     }
 }
 
-void spike_check(uint32_t rx_key, uint null_a){
+void spike_check(uint rx_key, uint null_a){
     use(null_a);
     if (check_incoming_spike_id(rx_key)){
         moc_spike_count++;
@@ -628,7 +627,7 @@ void moc_spike_received(uint mc_key, uint null_a) {
     use(null_a);
 
     spin1_schedule_callback(
-        (callback_t) spike_check, mc_key, FILLER_ARG, SPIKE_CHECK_PRIORITY);
+        spike_check, mc_key, FILLER_ARG, SPIKE_CHECK_PRIORITY);
     if (!rx_any_spikes){
         rx_any_spikes = 1;
     }
@@ -642,22 +641,22 @@ void data_read(uint mc_key, uint payload) {
         MC_union.u = payload;
 
         //collect the next segment of samples and copy into DTCM
-        if(test_dma == TRUE) {
+        if (test_dma == TRUE) {
             mc_seg_idx++;
 
             #ifdef PROFILE
-            if( mc_seg_idx >= parameters.seq_size){
+            if ( mc_seg_idx >= parameters.seq_size){
                 profiler_write_entry_disable_irq_fiq(
                     PROFILER_ENTER | PROFILER_TIMER);
             }
             #endif
 
             //assign receive buffer
-            if(!read_switch) {
+            if (!read_switch) {
                 dtcm_buffer_a[mc_seg_idx-1] = MC_union.f;
 
                 //completed filling a segment of input values
-                if(mc_seg_idx >= parameters.seq_size) {
+                if (mc_seg_idx >= parameters.seq_size) {
                     mc_seg_idx = 0;
                     read_switch = 1;
                     spin1_schedule_callback(
@@ -669,7 +668,7 @@ void data_read(uint mc_key, uint payload) {
                 dtcm_buffer_b[mc_seg_idx-1] = MC_union.f;
 
                 //completed filling a segment of input values
-                if(mc_seg_idx >= parameters.seq_size)
+                if (mc_seg_idx >= parameters.seq_size)
                 {
                     mc_seg_idx = 0;
                     read_switch = 0;
@@ -701,6 +700,7 @@ void count_ticks(uint null_a, uint null_b) {
     }
 }
 
+//! \brief
 void c_main() {
     // Get core and chip IDs
     uint32_t timer_period;
@@ -726,4 +726,3 @@ void c_main() {
         simulation_run();
     }
 }
-
