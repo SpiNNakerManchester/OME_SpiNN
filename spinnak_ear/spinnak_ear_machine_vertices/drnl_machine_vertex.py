@@ -1,4 +1,5 @@
 from pacman.model.graphs.abstract_sdram_partition import AbstractSDRAMPartition
+from pacman.model.graphs.common import Slice
 from pacman.model.graphs.machine import MachineVertex
 from pacman.model.resources.resource_container import ResourceContainer
 from pacman.model.resources.dtcm_resource import DTCMResource
@@ -64,7 +65,9 @@ class DRNLMachineVertex(
         "_n_profile_samples",
         "_process_profile_times",
         "_filter_params",
-        "_seq_size"
+        "_seq_size",
+        "_synapse_manager",
+        "_parent"
     ]
 
     FAIL_TO_RECORD_MESSAGE = (
@@ -99,6 +102,9 @@ class DRNLMachineVertex(
     # moc recording id
     MOC_RECORDING_REGION_ID = 0
 
+    # matrix weight scale
+    GLOBAL_WEIGHT_SCALE = 1.0
+
     # regions
     REGIONS = Enum(
         value="REGIONS",
@@ -107,11 +113,17 @@ class DRNLMachineVertex(
                ('FILTER_PARAMS', 2),
                ('RECORDING', 3),
                ('PROFILE', 4),
-               ('SDRAM_EDGE_ADDRESS', 5)])
+               ('SDRAM_EDGE_ADDRESS', 5),
+               ('SYNAPSE_PARAMS', 6),
+               ('POPULATION_TABLE', 7),
+               ('SYNAPTIC_MATRIX', 8),
+               ('SYNAPSE_DYNAMICS', 9),
+               ('CONNECTOR_BUILDER', 10),
+               ('DIRECT_MATRIX', 11)])
 
     def __init__(
             self, cf, delay, fs, n_data_points, drnl_index, is_recording,
-            profile, seq_size):
+            profile, seq_size, synapse_manager, parent):
         """
 
         :param ome: The connected ome vertex
@@ -127,6 +139,8 @@ class DRNLMachineVertex(
         self._drnl_index = drnl_index
         self._is_recording = is_recording
         self._seq_size = seq_size
+        self._synapse_manager = synapse_manager
+        self._parent = parent
 
         self._sdram_edge_size = (
             self.N_BUFFERS_IN_SDRAM_TOTAL * self._seq_size *
@@ -224,8 +238,14 @@ class DRNLMachineVertex(
         return self._num_data_points
 
     @property
-    @overrides(MachineVertex.resources_required)
-    def resources_required(self):
+    @inject_items({
+        "graph": "MemoryApplicationGraph",
+        "machine_time_step": "MachineTimeStep",
+    })
+    @overrides(
+        MachineVertex.resources_required,
+        additional_arguments={"graph", "machine_time_step"})
+    def resources_required(self, graph, machine_time_step):
         # system region
         sdram = constants.SYSTEM_BYTES_REQUIREMENT
         # sdram edge address store
@@ -238,8 +258,13 @@ class DRNLMachineVertex(
         sdram += self._N_PARAMETER_BYTES
         # profile
         sdram += self._profile_size()
-        # reocrding
+        # recording
         sdram += self._recording_size
+        # synapses
+
+        sdram += self._synapse_manager.get_sdram_usage_in_bytes(
+            Slice(self._drnl_index, self._drnl_index + 1),
+            graph.get_edges_ending_at_vertex(self._parent),  machine_time_step)
 
         resources = ResourceContainer(
             dtcm=DTCMResource(0),
@@ -362,18 +387,22 @@ class DRNLMachineVertex(
         "machine_time_step": "MachineTimeStep",
         "time_scale_factor": "TimeScaleFactor",
         "machine_graph": "MemoryMachineGraph",
+        "application_graph": "MemoryApplicationGraph",
         "routing_info": "MemoryRoutingInfos",
         "placements": "MemoryPlacements",
         "tags": "MemoryTags",
+        "graph_mapper": "MemoryGraphMapper"
     })
     @overrides(
         AbstractGeneratesDataSpecification.generate_data_specification,
         additional_arguments=[
             "machine_time_step", "time_scale_factor", "machine_graph",
-            "routing_info", "placements", "tags"])
+            "routing_info", "placements", "tags", "graph_mapper",
+            "application_graph"])
     def generate_data_specification(
             self, spec, placement, machine_time_step, time_scale_factor,
-            machine_graph, routing_info, placements, tags):
+            machine_graph, routing_info, placements, tags, graph_mapper,
+            application_graph):
 
         # reserve regions
         self._reserve_memory_regions(spec)
@@ -401,6 +430,18 @@ class DRNLMachineVertex(
         ip_tags = tags.get_ip_tags_for_vertex(self) or []
         spec.write_array(recording_utilities.get_recording_header_array(
             [self._recording_size], ip_tags=ip_tags))
+
+        self._synapse_manager.write_data_spec(
+            spec, graph_mapper.get_application_vertex(self),
+            Slice(self._drnl_index, self._drnl_index), self, placement,
+            machine_graph, application_graph, routing_info, graph_mapper,
+            self.GLOBAL_WEIGHT_SCALE, machine_time_step,
+            self.REGIONS.SYNAPSE_PARAMS.value,
+            self.REGIONS.POPULATION_TABLE.value,
+            self.REGIONS.SYNAPTIC_MATRIX.value,
+            self.REGIONS.DIRECT_MATRIX.value,
+            self.REGIONS.SYNAPSE_DYNAMICS.value,
+            self.REGIONS.CONNECTOR_BUILDER.value)
 
         # End the specification
         spec.end_specification()

@@ -46,17 +46,26 @@ class ANGroupMachineVertex(
         names=[('SYSTEM', 0),
                ('PARAMETERS', 1)])
 
-    def __init__(self, n_atoms, n_children, is_final_row):
+    def __init__(self, n_atoms, n_children, is_final_row, final_row_lo_atom):
         """
         """
-        MachineVertex.__init__(self, label="AN Group Node", constraints=None)
+        MachineVertex.__init__(
+            self,
+            label="AN Group Node with lo atom {} and is {} for final "
+                  "row".format(final_row_lo_atom, is_final_row),
+            constraints=None)
         self._n_atoms = n_atoms
         self._n_children = n_children
         self._is_final_row = is_final_row
+        self._low_atom = final_row_lo_atom
 
     @property
     def is_final_row(self):
         return self._is_final_row
+
+    @property
+    def low_atom(self):
+        return self._low_atom
 
     @property
     @overrides(MachineVertex.resources_required)

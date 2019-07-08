@@ -19,6 +19,9 @@ from spinnak_ear.spinnak_ear_edges.spinnaker_ear_machine_edge import \
 
 from spynnaker.pyNN.models.abstract_models.\
     abstract_accepts_incoming_synapses import AbstractAcceptsIncomingSynapses
+from spynnaker.pyNN.models.abstract_models.\
+    abstract_sends_outgoing_synapses import \
+    AbstractSendsOutgoingSynapses
 from spynnaker.pyNN.models.common import AbstractSpikeRecordable, \
     AbstractNeuronRecordable
 from spynnaker.pyNN.models.common.simple_population_settable \
@@ -44,6 +47,9 @@ import numpy
 import math
 import random
 import logging
+
+from spynnaker.pyNN.models.neuron.synaptic_manager import SynapticManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,7 +57,8 @@ class SpiNNakEarApplicationVertex(
         ApplicationVertex, AbstractAcceptsIncomingSynapses,
         SimplePopulationSettable, HandOverToVertex, AbstractChangableAfterRun,
         AbstractSpikeRecordable, AbstractNeuronRecordable,
-        AbstractControlsDestinationOfEdges, AbstractControlsSourceOfEdges):
+        AbstractControlsDestinationOfEdges, AbstractControlsSourceOfEdges,
+        AbstractSendsOutgoingSynapses):
 
     __slots__ = [
         # pynn model
@@ -62,6 +69,8 @@ class SpiNNakEarApplicationVertex(
         "_ihcan_vertices",
         # drnl vertices
         "_drnl_vertices",
+        # final agg verts (outgoing atoms)
+        "_final_agg_vertices",
         # storing synapse dynamics
         "_synapse_dynamics",
         # fibres per.... something
@@ -73,7 +82,13 @@ class SpiNNakEarApplicationVertex(
         #
         "_ihcan_fibre_random_seed",
         # the number of columns / rows for aggregation tree
-        "_n_group_tree_rows"
+        "_n_group_tree_rows",
+        #
+        "__synapse_manager",
+        #
+        "_n_dnrls",
+        #
+        "_n_final_agg_groups"
     ]
 
     # NOTES IHC = inner hair cell
@@ -124,6 +139,8 @@ class SpiNNakEarApplicationVertex(
     MSR_FLAG = 1
     LSR_FLAG = 0
 
+    N_SYNAPSE_TYPES = 2
+
     def __init__(
             self, n_neurons, constraints, label, model, profile):
         # Superclasses
@@ -140,6 +157,10 @@ class SpiNNakEarApplicationVertex(
         self._synapse_dynamics = None
         self._ihcan_vertices = list()
         self._drnl_vertices = list()
+        self._final_agg_vertices = list()
+        self.__synapse_manager = SynapticManager(
+            self.N_SYNAPSE_TYPES, None, None,
+            globals_variables.get_simulator().config)
 
         # ear hair frequency bits in total per inner ear channel
         self._n_fibres_per_ihc = (
@@ -147,10 +168,10 @@ class SpiNNakEarApplicationVertex(
             self._model.n_hsr_per_ihc)
 
         # number of columns needed for the aggregation tree
-        atoms_per_row = int(numpy.ceil(math.log(
-            (self._model.n_channels * self._n_fibres_per_ihc) /
+        atoms_per_row = self.calculate_atoms_per_row(
+            self._model.n_channels, self._n_fibres_per_ihc,
             self._model.n_fibres_per_ihcan,
-            self._model.max_input_to_aggregation_group)))
+            self._model.max_input_to_aggregation_group)
 
         # ????????
         max_n_atoms_per_group_tree_row = (
@@ -186,42 +207,92 @@ class SpiNNakEarApplicationVertex(
                 self._ihc_seeds = pre_gen_vars['ihc_seeds']
                 self._ome_indices = pre_gen_vars['ome_indices']
             except:
-                self._n_atoms = self._calculate_n_atoms(atoms_per_row)
+                self._n_atoms, self._n_dnrls, self._n_final_agg_groups = \
+                    self.calculate_n_atoms(
+                        atoms_per_row,
+                        self._model.max_input_to_aggregation_group,
+                        self._model.n_channels, self._model.n_ihc)
                 # save fixed param file
                 self._save_pre_gen_vars(self._model.param_file)
         else:
-            self._n_atoms = self._calculate_n_atoms(atoms_per_row)
+            self._n_atoms, self._n_dnrls, self._n_final_agg_groups = \
+                self.calculate_n_atoms(
+                    atoms_per_row, self._model.max_input_to_aggregation_group,
+                    self._model.n_channels, self._model.n_ihc)
 
         #if self._n_atoms != n_neurons:
         #    raise ConfigurationException(
         #        self.N_NEURON_ERROR.format(n_neurons, self._n_atoms))
 
+    @overrides(AbstractSendsOutgoingSynapses.get_out_going_size)
+    def get_out_going_size(self):
+        return self._n_final_agg_groups
+
+    def get_out_going_slices(self):
+        slices = list()
+        starter = 0
+        for _ in self._final_agg_vertices:
+            slices.append(Slice(starter, starter))
+            starter += 1
+        return slices
+
+    def get_in_coming_slices(self):
+        slices = list()
+        starter = 0
+        for _ in self._drnl_vertices:
+            slices.append(Slice(starter, starter))
+            starter += 1
+        return slices
+
+    @overrides(AbstractControlsSourceOfEdges.get_pre_slice_for)
+    def get_pre_slice_for(self, machine_vertex):
+        if isinstance(machine_vertex, ANGroupMachineVertex):
+            if machine_vertex.is_final_row:
+                return Slice(machine_vertex.low_atom, machine_vertex.low_atom)
+        raise Exception(
+            "Why are you asking for a source outside of aggregation verts?!")
+
+    @overrides(AbstractControlsDestinationOfEdges.get_post_slice_for)
+    def get_post_slice_for(self, machine_vertex):
+        if isinstance(machine_vertex, DRNLMachineVertex):
+            return Slice(machine_vertex.drnl_index, machine_vertex.drnl_index)
+        raise Exception(
+            "why you asking for a destination atoms outside of the drnl "
+            "verts!?")
+
+    @overrides(AbstractAcceptsIncomingSynapses.get_in_coming_size)
+    def get_in_coming_size(self):
+        return self._n_dnrls
+
     @overrides(AbstractAcceptsIncomingSynapses.get_synapse_id_by_target)
     def get_synapse_id_by_target(self, target):
-        return 0
+        if target == "excitatory":
+            return 0
+        elif target == "inhibitory":
+            return 1
+        return None
 
     @overrides(
         AbstractControlsDestinationOfEdges.get_destinations_for_edge_from)
     def get_destinations_for_edge_from(
-            self, app_edge, partition_id, graph_mapper):
-        if app_edge.pre_vertex != self and app_edge.post_vertex == self:
-            drnl_verts = list()
-            for machine_vertex in graph_mapper.get_machine_vertices(self):
-                if isinstance(machine_vertex, DRNLMachineVertex):
-                    drnl_verts.append(machine_vertex)
-            return drnl_verts
+            self, app_edge, partition_id, graph_mapper,
+            original_source_machine_vertex):
+        if ((app_edge.pre_vertex != self and app_edge.post_vertex == self)
+            and not isinstance(original_source_machine_vertex,
+                               OMEMachineVertex)):
+            return self._drnl_vertices
         else:
             return []
 
     @overrides(AbstractControlsSourceOfEdges.get_sources_for_edge_from)
-    def get_sources_for_edge_from(self, app_edge, partition_id, graph_mapper):
-        if app_edge.pre_vertex == self and app_edge.post_vertex != self:
-            aggregation_verts = list()
-            for machine_vertex in graph_mapper.get_machine_vertices(self):
-                if (isinstance(machine_vertex, ANGroupMachineVertex) and
-                        machine_vertex.is_final_row):
-                    aggregation_verts.append(machine_vertex)
-            return aggregation_verts
+    def get_sources_for_edge_from(
+            self, app_edge, partition_id, graph_mapper,
+            original_source_machine_vertex):
+        if ((app_edge.pre_vertex == self and app_edge.post_vertex != self)
+                and isinstance(original_source_machine_vertex,
+                           ANGroupMachineVertex)
+                and original_source_machine_vertex.is_final_row):
+            return [original_source_machine_vertex]
         else:
             return []
 
@@ -233,7 +304,8 @@ class SpiNNakEarApplicationVertex(
     @overrides(AbstractAcceptsIncomingSynapses.add_pre_run_connection_holder)
     def add_pre_run_connection_holder(
             self, connection_holder, projection_edge, synapse_information):
-        pass
+        self.__synapse_manager.add_pre_run_connection_holder(
+            connection_holder, projection_edge, synapse_information)
 
     def _save_pre_gen_vars(self, file_path):
         """
@@ -260,11 +332,18 @@ class SpiNNakEarApplicationVertex(
             placements=None,  monitor_api=None, monitor_placement=None,
             monitor_cores=None, handle_time_out_configuration=True,
             fixed_routes=None):
-        raise Exception("cant get connections from projections to here yet")
+        return self.__synapse_manager.get_connections_from_machine(
+            transceiver, placement, edge, graph_mapper, routing_infos,
+            synapse_information, machine_time_step, using_extra_monitor_cores,
+            DRNLMachineVertex.REGIONS.POPULATION_TABLE.value,
+            DRNLMachineVertex.REGIONS.SYNAPTIC_MATRIX.value,
+            DRNLMachineVertex.REGIONS.DIRECT_MATRIX.value,
+            placements, monitor_api, monitor_placement, monitor_cores,
+            handle_time_out_configuration, fixed_routes)
 
     @overrides(AbstractAcceptsIncomingSynapses.clear_connection_cache)
     def clear_connection_cache(self):
-        pass
+        self.__synapse_manager.clear_connection_cache()
 
     @overrides(SimplePopulationSettable.set_value)
     def set_value(self, key, value):
@@ -297,74 +376,84 @@ class SpiNNakEarApplicationVertex(
     def _add_to_graph_components(
             self, machine_graph, graph_mapper, lo_atom, vertex,
             resource_tracker):
-        resource_tracker.allocate_constrained_resources(
-            vertex.resources_required, vertex.constraints)
         machine_graph.add_vertex(vertex)
         graph_mapper.add_vertex_mapping(
-            vertex, Slice(lo_atom, lo_atom + 1), self)
-        lo_atom += 1
+            vertex, Slice(lo_atom, lo_atom), self)
+        resource_tracker.allocate_constrained_resources(
+            vertex.resources_required, vertex.constraints)
+        return lo_atom + 1
 
     def _build_ome_vertex(
             self, machine_graph, graph_mapper, lo_atom, resource_tracker):
+        """ builds the ome vertex
+        
+        :param machine_graph: machine graph
+        :param graph_mapper: graph mapper
+        :param lo_atom: lo atom to put into graph mapper slice
+        :param resource_tracker: the resource tracker
+        :return: the ome vertex and the new low atom
+        """
         # build the ome machine vertex
         ome_vertex = OMEMachineVertex(
             self._model.audio_input, self._model.fs, self._model.n_channels,
             time_scale=self._time_scale_factor, profile=False)
 
         # allocate resources and updater graphs
-        self._add_to_graph_components(
+        new_lo_atom = self._add_to_graph_components(
             machine_graph, graph_mapper, lo_atom, ome_vertex, resource_tracker)
-        return ome_vertex
+        return ome_vertex, new_lo_atom
 
     def _build_drnl_verts(
-            self, machine_graph, graph_mapper, current_atom_count,
-            resource_tracker, ome_vertex):
+            self, machine_graph, graph_mapper, new_low_atom, resource_tracker,
+            ome_vertex):
         """
         
         :param machine_graph: 
         :param graph_mapper: 
-        :param current_atom_count: 
+        :param new_low_atom: 
         :param resource_tracker: 
         :param ome_vertex: 
         :return: 
         """
-        drnl_verts = list()
         pole_index = 0
         for _ in range(self._model.n_channels):
             drnl_vertex = DRNLMachineVertex(
                 self._model.pole_freqs[pole_index], 0.0, self._model.fs,
                 ome_vertex.n_data_points, pole_index, self._is_recording_moc,
-                False, self._model.seq_size)
+                False, self._model.seq_size, self.__synapse_manager, self)
             pole_index += 1
-            self._add_to_graph_components(
-                machine_graph, graph_mapper, current_atom_count, drnl_vertex,
+            new_low_atom = self._add_to_graph_components(
+                machine_graph, graph_mapper, new_low_atom, drnl_vertex,
                 resource_tracker)
-            drnl_verts.append(drnl_vertex)
-        return drnl_verts
+            self._drnl_vertices.append(drnl_vertex)
+        return new_low_atom
 
-    @staticmethod
     def _build_edges_between_ome_drnls(
-            ome_vertex, drnl_verts, machine_graph, app_edge, graph_mapper):
+            self, ome_vertex, machine_graph, app_edge, graph_mapper):
         """ adds edges between the ome and the drnl vertices
         
         :param ome_vertex: the ome vertex
-        :param drnl_verts: the drnl vertices
         :param machine_graph: the machine graph
         :param app_edge: the app edge covering all these edges
         :param graph_mapper: the graph mapper
         :return: 
         """
-        for drnl_vert in drnl_verts:
+        for drnl_vert in self._drnl_vertices:
             edge = SpiNNakEarMachineEdge(ome_vertex, drnl_vert)
             machine_graph.add_edge(edge, ome_vertex.OME_PARTITION_ID)
             graph_mapper.add_edge_mapping(edge, app_edge)
 
     def _build_ihcan_vertices_and_sdram_edges(
-            self, drnl_verts, machine_graph, graph_mapper, current_atom_count,
+            self, machine_graph, graph_mapper, new_low_atom,
             resource_tracker, app_edge, sdram_app_edge):
-        """ 
+        """
         
-        :param drnl_verts: 
+        :param machine_graph: 
+        :param graph_mapper: 
+        :param new_low_atom: 
+        :param resource_tracker: 
+        :param app_edge: 
+        :param sdram_app_edge: 
         :return: iterable of ihcan verts
         """
 
@@ -380,7 +469,7 @@ class SpiNNakEarApplicationVertex(
             random_range, int(n_ihcans * self._N_SEEDS_PER_IHCAN_VERTEX),
             replace=False)
 
-        for drnl_vertex in drnl_verts:
+        for drnl_vertex in self._drnl_vertices:
             machine_graph.add_outgoing_edge_partition(
                 ConstantSDRAMMachinePartition(
                     drnl_vertex.DRNL_SDRAM_PARTITION_ID, drnl_vertex,
@@ -420,8 +509,8 @@ class SpiNNakEarApplicationVertex(
                 seed_index += self._N_SEEDS_PER_IHCAN_VERTEX
                 ichans.append(vertex)
 
-                self._add_to_graph_components(
-                    machine_graph, graph_mapper, current_atom_count, vertex,
+                new_low_atom = self._add_to_graph_components(
+                    machine_graph, graph_mapper, new_low_atom, vertex,
                     resource_tracker)
 
                 # multicast
@@ -438,11 +527,11 @@ class SpiNNakEarApplicationVertex(
                 machine_graph.add_edge(
                     sdram_edge, drnl_vertex.DRNL_SDRAM_PARTITION_ID)
                 graph_mapper.add_edge_mapping(sdram_edge, sdram_app_edge)
-        return ichans
+        return ichans, new_low_atom
 
-    def _build_aggration_group_vertices_and_edges(
+    def _build_aggregation_group_vertices_and_edges(
             self, ichan_vertices, machine_graph, graph_mapper,
-            current_atom_count, resource_tracker, app_edge):
+            new_low_atom, resource_tracker, app_edge):
 
         to_process = ichan_vertices
         n_child_per_group = self._model.max_input_to_aggregation_group
@@ -452,6 +541,7 @@ class SpiNNakEarApplicationVertex(
             n_row_angs = int(
                 numpy.ceil(float(len(to_process)) / n_child_per_group))
             for an in range(n_row_angs):
+                final_row_lo_atom = 0
                 child_verts = to_process[
                     an * n_child_per_group:
                     an * n_child_per_group + n_child_per_group]
@@ -462,14 +552,17 @@ class SpiNNakEarApplicationVertex(
                     n_atoms += child.n_atoms
 
                 # build vert
+                final_row = row == self._n_group_tree_rows - 1
                 ag_vertex = ANGroupMachineVertex(
-                    n_atoms, len(child_verts),
-                    row == self._n_group_tree_rows - 1)
+                    n_atoms, len(child_verts), final_row, final_row_lo_atom)
+                if final_row:
+                    self._final_agg_vertices.append(ag_vertex)
+                    final_row_lo_atom += 1
                 aggregation_verts.append(ag_vertex)
 
                 # update stuff
-                self._add_to_graph_components(
-                    machine_graph, graph_mapper, current_atom_count, ag_vertex,
+                new_low_atom = self._add_to_graph_components(
+                    machine_graph, graph_mapper, new_low_atom, ag_vertex,
                     resource_tracker)
 
                 # add edges
@@ -503,29 +596,32 @@ class SpiNNakEarApplicationVertex(
         application_graph.add_edge(
             sdram_app_edge, self.SDRAM_APP_EDGE_PARTITION_ID)
 
+
+
         # atom tracker
         current_atom_count = 0
 
         # ome vertex
-        ome_vertex = self._build_ome_vertex(
+        ome_vertex, current_atom_count = self._build_ome_vertex(
             machine_graph, graph_mapper, current_atom_count, resource_tracker)
 
         # handle the drnl verts
-        drnl_verts = self._build_drnl_verts(
+        current_atom_count = self._build_drnl_verts(
             machine_graph, graph_mapper, current_atom_count, resource_tracker,
             ome_vertex)
 
         # handle edges between ome and drnls
         self._build_edges_between_ome_drnls(
-            ome_vertex, drnl_verts, machine_graph, mc_app_edge, graph_mapper)
+            ome_vertex, machine_graph, mc_app_edge, graph_mapper)
 
         # build the ihcan verts.
-        ichan_vertices = self._build_ihcan_vertices_and_sdram_edges(
-            drnl_verts, machine_graph, graph_mapper, current_atom_count,
-            resource_tracker, mc_app_edge, sdram_app_edge)
+        ichan_vertices, current_atom_count = (
+            self._build_ihcan_vertices_and_sdram_edges(
+                machine_graph, graph_mapper, current_atom_count,
+                resource_tracker, mc_app_edge, sdram_app_edge))
 
         # build aggregation group verts and edges
-        self._build_aggration_group_vertices_and_edges(
+        self._build_aggregation_group_vertices_and_edges(
             ichan_vertices, machine_graph, graph_mapper, current_atom_count,
             resource_tracker, mc_app_edge)
 
@@ -534,43 +630,35 @@ class SpiNNakEarApplicationVertex(
     def n_atoms(self):
         return self._n_atoms
 
-    def _calculate_n_atoms(self, n_group_tree_rows):
+    @staticmethod
+    def calculate_n_atoms(
+            n_group_tree_rows, max_input_to_aggregation_group, n_channels,
+            n_ihc):
         # ome atom
         n_atoms = 1
 
         # dnrl atoms
-        n_atoms += self._model.n_channels
+        n_atoms += n_channels
 
         # ihcan atoms
-        n_angs = self._model.n_channels * self._model.n_ihc
+        n_angs = n_channels * n_ihc
         n_atoms += n_angs
 
         # an group atoms
         for row_index in range(n_group_tree_rows):
             n_row_angs = int(
-                numpy.ceil(
-                    float(n_angs) /
-                    self._model.max_input_to_aggregation_group))
+                numpy.ceil(float(n_angs) / max_input_to_aggregation_group))
             n_atoms += n_row_angs
             n_angs = n_row_angs
-        return n_atoms
+        return n_atoms, n_channels, n_angs
 
-    @overrides(HandOverToVertex.source_vertices_from_edge)
-    def source_vertices_from_edge(self, edge):
-        """ returns vertices for connecting this projection
-
-        :param edge: projection to connect to sources
-        :return: the iterable of vertices to be sources of this projection
-        """
-
-    @overrides(HandOverToVertex.destination_vertices_from_edge)
-    def destination_vertices_from_edge(self, edge):
-        """ return vertices for connecting this projection
-
-        :param edge: projection to connect to destinations
-        :return: the iterable of vertices to be destinations of this \
-        projection.
-        """
+    @staticmethod
+    def calculate_atoms_per_row(
+            n_channels, n_fibres_per_ihc, n_fibres_per_ihcan,
+            max_input_to_aggregation_group):
+        return int(numpy.ceil(math.log(
+            (n_channels * n_fibres_per_ihc) / n_fibres_per_ihcan,
+            max_input_to_aggregation_group)))
 
     @overrides(AbstractChangableAfterRun.mark_no_changes)
     def mark_no_changes(self):

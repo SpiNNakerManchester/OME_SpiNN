@@ -196,6 +196,31 @@ class SpiNNakEar(AbstractPyNNModel):
             n_neurons,  constraints, label, self, self._profile)
 
     @property
+    def incoming_neurons(self):
+        n_fibres_per_ihc = (
+            self.n_lsr_per_ihc + self.n_msr_per_ihc + self.n_hsr_per_ihc)
+        _, n_dnrls, __ = SpiNNakEarApplicationVertex.calculate_n_atoms(
+            SpiNNakEarApplicationVertex.calculate_atoms_per_row(
+                self._n_channels, n_fibres_per_ihc, self._n_fibres_per_ihcan,
+                self._max_input_to_aggregation_group),
+            self._max_input_to_aggregation_group, self._n_channels, self._n_ihc)
+        return n_dnrls
+
+    @property
+    def outgoing_neurons(self):
+        n_fibres_per_ihc = (
+            self.n_lsr_per_ihc + self.n_msr_per_ihc + self.n_hsr_per_ihc)
+        _, __, n_final_agg_groups = \
+            SpiNNakEarApplicationVertex.calculate_n_atoms(
+                SpiNNakEarApplicationVertex.calculate_atoms_per_row(
+                    self._n_channels, n_fibres_per_ihc,
+                    self._n_fibres_per_ihcan,
+                    self._max_input_to_aggregation_group),
+                self._max_input_to_aggregation_group,
+                self._n_channels, self._n_ihc)
+        return n_final_agg_groups
+
+    @property
     def seq_size(self):
         return self._seq_size
 
@@ -218,6 +243,9 @@ class SpiNNakEar(AbstractPyNNModel):
     @staticmethod
     def spinnakear_size_calculator(scale=FULL_SCALE):
         return int(SpiNNakEar.MAX_NEURON_SIZE * scale)
+
+    def spinnakear_outgoing_neuron_size(scale=FULL_SCALE):
+        return
 
     @property
     def model_name(self):
