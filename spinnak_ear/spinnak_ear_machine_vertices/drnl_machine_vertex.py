@@ -1,3 +1,4 @@
+from __future__ import division
 from pacman.model.graphs.abstract_sdram_partition import AbstractSDRAMPartition
 from pacman.model.graphs.common import Slice
 from pacman.model.graphs.machine import MachineVertex
@@ -38,6 +39,7 @@ from spinnak_ear.spinnak_ear_machine_vertices.ome_machine_vertex import \
 from enum import Enum
 import numpy
 import logging
+import math
 
 logger = FormatAdapter(logging.getLogger(__name__))
 
@@ -79,17 +81,20 @@ class DRNLMachineVertex(
     DRNL_SDRAM_PARTITION_ID = "DRNLSDRAMData"
 
     # The number of bytes for the parameters
-    # 1: n data points, 2: data key, 3: centre freq, 4: ome data key,
-    # 5: recording flag, 6: seq size, 7:n buffers in sdram, 8: n mocs,
-    # 9: size of mocs, 10 n synapse types
-    _N_PARAMS = 10
+    # 1: n data points, 2: data key, 3: ome data key,
+    # 4: recording flag, 5: seq size, 6:n buffers in sdram, 7. n synapse types
+    # 8. moc_resample_factor, 9&10. moc_dec1, 11&12. moc_dec_2,
+    # 13&14. moc_dec_3, 15,16 moc_factor_1, 17,18 ctbm, 19,20 recip_ctbm
+    # 21,22 disp_thresh
+    _N_PARAMS = 22
     _N_PARAMETER_BYTES = _N_PARAMS * BYTES_PER_WORS
 
     # circular buffer to IHCs
     N_BUFFERS_IN_SDRAM_TOTAL = 4
 
     # sdram edge address in sdram
-    SDRAM_EDGE_ADDRESS_SIZE_IN_BYTES = 4
+    # 1. address, 2. size. 3. double elements
+    SDRAM_EDGE_ADDRESS_SIZE_IN_WORDS = 3
 
     # n filter params
     # 1. la1 2. la2 3. lb0 4. lb1 5. nla1 6. nla2 7.nlb0 8. nlb1
@@ -107,6 +112,14 @@ class DRNLMachineVertex(
 
     # synapse types
     N_SYNAPSE_TYPES = 2
+
+    # moc magic numbers
+    MOC_TAU_0 = 0.055
+    MOC_TAU_1 = 0.4
+    MOC_TAU_2 = 1
+    MOC_TAU_WEIGHT = 0.9
+
+    RATE_TO_ATTENTUATION_FACTOR = 6e2
 
     # regions
     REGIONS = Enum(
@@ -252,7 +265,8 @@ class DRNLMachineVertex(
         # system region
         sdram = constants.SYSTEM_BYTES_REQUIREMENT
         # sdram edge address store
-        sdram += self.SDRAM_EDGE_ADDRESS_SIZE_IN_BYTES
+        sdram += (self.SDRAM_EDGE_ADDRESS_SIZE_IN_WORDS
+                  *constants.WORD_TO_BYTE_MULTIPLIER)
         # the actual size needed by sdram edge
         sdram += self._sdram_edge_size
         # filter params
@@ -312,7 +326,8 @@ class DRNLMachineVertex(
 
         spec.reserve_memory_region(
             self.REGIONS.SDRAM_EDGE_ADDRESS.value,
-            self.SDRAM_EDGE_ADDRESS_SIZE_IN_BYTES, "sdram edge address")
+            (self.SDRAM_EDGE_ADDRESS_SIZE_IN_WORDS *
+             constants.WORD_TO_BYTE_MULTIPLIER), "sdram edge address")
 
         spec.reserve_memory_region(
             self.REGIONS.FILTER_PARAMS.value,
@@ -357,15 +372,41 @@ class DRNLMachineVertex(
         # write n buffers
         spec.write_value(self.N_BUFFERS_IN_SDRAM_TOTAL)
 
-        # Write the number of mocs
-        spec.write_value(0)
-        # Write the size of the conn LUT
-        spec.write_value(0)
-
-        # write n syanpses
+        # write n synapses
         spec.write_value(self.N_SYNAPSE_TYPES)
 
-    def _write_sdram_edge_rgion(self, spec, machine_graph):
+        # write moc resample factor
+        spec.write_value(self._fs / 1000.0)
+
+        # moc dec 1
+        dt = 1.0 / self._fs
+        spec.write_value(
+            math.exp(-dt / self.MOC_TAU_0), data_type=DataType.FLOAT_64)
+
+        # moc dec 2
+        spec.write_value(
+            math.exp(-dt / self.MOC_TAU_1), data_type=DataType.FLOAT_64)
+
+        # moc dec 3
+        spec.write_value(
+            math.exp(-dt / self.MOC_TAU_2), data_type=DataType.FLOAT_64)
+
+        # moc_factor_1
+        spec.write_value(
+            self.RATE_TO_ATTENTUATION_FACTOR * self.MOC_TAU_WEIGHT * dt,
+            data_type=DataType.FLOAT_64)
+
+        # ctbm
+        ctbm = 1e-9 * math.pow(10.0, 32.0 / 20.0)
+        spec.write_value(ctbm, data_type=DataType.FLOAT_64)
+
+        # recip_ctbm
+        spec.write_value(1.0 / ctbm, data_type=DataType.FLOAT_64)
+
+        # disp_thresh
+        spec.write_value(ctbm / 30e4, data_type=DataType.FLOAT_64)
+
+    def _write_sdram_edge_region(self, spec, machine_graph):
         """
         
         :param spec: 
@@ -374,9 +415,12 @@ class DRNLMachineVertex(
         """
         for edge in machine_graph.get_edges_starting_at_vertex(self):
             partition = machine_graph.get_outgoing_partition_for_edge(edge)
-            if isinstance(partition, AbstractSDRAMPartition):
+            if (isinstance(partition, AbstractSDRAMPartition) and
+                    partition.identifer == self.DRNL_SDRAM_PARTITION_ID):
                 spec.write_value(partition.sdram_base_address)
                 spec.write_value(partition.total_sdram_requirements)
+                spec.write_value(
+                    partition.total_sdram_requirements / DataType.FLOAT_64.size)
                 break
 
     def _write_filter_params(self, spec):
@@ -426,7 +470,7 @@ class DRNLMachineVertex(
         self._write_filter_params(spec)
 
         # sdram edge
-        self._write_sdram_edge_rgion(spec, machine_graph)
+        self._write_sdram_edge_region(spec, machine_graph)
 
         # only write params if used
         self._write_profile_dsg(spec)

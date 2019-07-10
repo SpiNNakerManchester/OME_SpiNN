@@ -8,10 +8,7 @@
  ============================================================================
  */
 
-//#include "stdfix-full-iso.h"
 #include "DRNL_SpiNN.h"
-#include "spin1_api.h"
-#include "math.h"
 #include "log.h"
 #include <data_specification.h>
 #include <profiler.h>
@@ -45,14 +42,12 @@ uint write_switch;
 uint processing;
 uint index_x;
 uint index_y;
-uint mc_seg_idx;
+int mc_seg_idx;
 uint_float_union MC_union;
 uint moc_buffer_index = 0;
 uint moc_i = 0;
 uint moc_write_switch = 0;
-uint moc_resample_factor;
 uint moc_sample_count = 0;
-uint mc_tx_count = 0;
 bool app_complete = false;
 
 double moc;
@@ -78,7 +73,6 @@ double nlin_y1b[2];
 double nlin_y2b[2];
 
 uint rx_any_spikes = 0;
-uint moc_changed = 0;
 
 // the buffers
 float *dtcm_buffer_a;
@@ -117,9 +111,6 @@ void neuron_add_inputs(
     }
     else if (synapse_type_index == INHIBITORY) {
         moc_spike_weight -= weights_this_timestep;
-    }
-    else {
-        log_error("don't recognise this synapse type.");
     }
 }
 
@@ -163,7 +154,7 @@ void data_write(uint arg_1, uint arg_2)
         //flip write buffers
         write_switch = !write_switch;
 
-		if (moc_i>=MOC_BUFFER_SIZE) {
+		if (moc_i >= MOC_BUFFER_SIZE) {
 
 		    if (!moc_write_switch){
 		        dtcm_buffer_moc=dtcm_buffer_moc_x;
@@ -188,7 +179,7 @@ uint process_chan(
 	    parameters.seq_size * (
 	        (seg_index - 1) & (parameters.n_buffers_in_sdram - 1));
 
-	uint i;
+	int i;
 	double linout1;
 	double linout2;
 	double nonlinout1a;
@@ -265,13 +256,13 @@ uint process_chan(
 		//stage 2
 		abs_x = absolute_value(non_linout_2a);
 
-		if (abs_x < DISP_THRESH) {
+		if (abs_x < parameters.disp_thresh) {
 			compressed_non_lin = A * non_linout_2a;
 		}
 		else {
 			compressed_non_lin =
-			    find_sign(non_linout_2a) * CTBM * (double) expk(
-			        C * logk((accum)(A * (abs_x * RECIP_CTBM))));
+			    find_sign(non_linout_2a) * parameters.ctbm * (double) expk(
+			        C * logk((accum)(A * (abs_x * parameters.receip_ctbm))));
 		}
 
 		//stage 3
@@ -301,11 +292,8 @@ uint process_chan(
 
 		//if recording MOC
 		moc_sample_count++;
-		if (moc_sample_count == moc_resample_factor){
+		if (moc_sample_count == parameters.moc_resample_factor){
 		    moc_out_buffer[moc_i] = moc;
-		    if (moc != 1.0){
-		        moc_changed = 1;
-		    }
 		    moc_i++;
 		    moc_sample_count = 0;
 		}
@@ -361,7 +349,6 @@ void write_complete(uint tid, uint ttag) {
     #endif
 
     //send MC packet to connected IHC/AN models
-    mc_tx_count++;
     while (!spin1_send_mc_packet(parameters.key, DRNL_FILLER_ARG, NO_PAYLOAD)) {
         spin1_delay_us(1);
     }
@@ -378,7 +365,7 @@ void data_read(uint mc_key, uint payload) {
             mc_seg_idx++;
 
             #ifdef PROFILE
-            if ( mc_seg_idx >= parameters.seq_size){
+            if (mc_seg_idx >= parameters.seq_size) {
                 profiler_write_entry_disable_irq_fiq(
                     PROFILER_ENTER | PROFILER_TIMER);
             }
@@ -414,12 +401,6 @@ void data_read(uint mc_key, uint payload) {
     }
 }
 
-void app_done () {
-    #ifdef PROFILE
-	profiler_finalise();
-    #endif
-}
-
 void count_ticks(uint null_a, uint null_b) {
     use(null_a);
 	use(null_b);
@@ -433,7 +414,7 @@ void count_ticks(uint null_a, uint null_b) {
 }
 
 //application initialisation
-bool app_init(uint32_t *timer_period) {
+static inline bool app_init(uint32_t *timer_period) {
 	seg_index = 0;
 	read_switch = 0;
 	write_switch = 0;
@@ -461,13 +442,7 @@ bool app_init(uint32_t *timer_period) {
         }
     }
 
-    //Get sampling frequency
-    uint sampling_frequency = parameters.fs;
-    double fs = (double) sampling_frequency;
-	double dt = (1.0 / fs);
-
-    moc_resample_factor = (fs / MOC_RESAMPLE_FACTOR_CONVERTER);
-    log_info("moc resample factor =%d\n", moc_resample_factor);
+    log_info("moc resample factor =%d\n",  parameters.moc_resample_factor);
 
 	log_info("ome_data_key=%d\n", parameters.ome_data_key);
 
@@ -507,23 +482,23 @@ bool app_init(uint32_t *timer_period) {
 		test_dma = TRUE;
 
 		// initialize sections of DTCM, system RAM and SDRAM
-		for (uint i = 0; i < parameters.seq_size; i++) {
+		for (int i = 0; i < parameters.seq_size; i++) {
 			dtcm_buffer_a[i] = 0;
 			dtcm_buffer_b[i] = 0;
 		}
 
-		for (uint i = 0; i < parameters.seq_size; i++) {
+		for (int i = 0; i < parameters.seq_size; i++) {
 			dtcm_buffer_x[i] = 0;
 			dtcm_buffer_y[i] = 0;
 		}
 
-        for (uint i = 0; i < MOC_BUFFER_SIZE; i++) {
+        for (int i = 0; i < MOC_BUFFER_SIZE; i++) {
             dtcm_buffer_moc_x[i] = 0;
 			dtcm_buffer_moc_y[i] = 0;
 		}
 
-		for (uint i = 0; i < sdram_params.sdram_edge_size / sizeof(double);
-		        i++) {
+        int steps = sdram_params.sdram_edge_size / sizeof(double);
+		for (int i = 0; i < steps; i++) {
 			sdram_out_buffer[i] = 0;
 		}
 
@@ -535,15 +510,6 @@ bool app_init(uint32_t *timer_period) {
         &filter_params,
         data_specification_get_region(FILTER_PARAMS, data_address),
         sizeof(filter_params_struct));
-
-    log_info("lin a1: %k", (accum) filter_params.la1);
-    log_info("lin a2: %k", (accum) filter_params.la2);
-    log_info("lin b0: %k", (accum) filter_params.lb0);
-    log_info("lin b1: %k", (accum) filter_params.lb1);
-    log_info("nlin a1: %k", (accum) filter_params.nla1);
-    log_info("nlin a2: %k", (accum) filter_params.nla2);
-    log_info("nlin b0: %k", (accum) filter_params.nlb0);
-    log_info("nlin b1: %k", (accum)  filter_params.nlb1);
 
 	//starting values
 	lin_x1 = 0.0;
@@ -571,11 +537,11 @@ bool app_init(uint32_t *timer_period) {
 	moc_now_2 = 0.0;
 	moc_now_4 = 0.0;
 
-    moc_dec_1 = exp(- dt / MOC_TAU_0);
-    moc_dec_2 = exp(- dt / MOC_TAU_1);
-    moc_dec_3 = exp(- dt / MOC_TAU_2);
+    moc_dec_1 = parameters.moc_dec_1;
+    moc_dec_2 = parameters.moc_dec_2;
+    moc_dec_3 = parameters.moc_dec_3;
 
-    moc_factor_1 = RATE_TO_ATTENTUATION_FACTOR * MOC_TAU_WEIGHT * dt;
+    moc_factor_1 = parameters.moc_factor_1;
     moc_factor_2 = 0.0;
     moc_factor_3 = 0.0;
 
@@ -615,7 +581,7 @@ bool app_init(uint32_t *timer_period) {
     // set up spike processing
     if (!spike_processing_initialise(
             row_max_n_words, MC_PACKET_PRIORITY, DATA_WRITE_PRIORITY,
-            INCOMING_SPIKE_BUFFER_SIE)) {
+            INCOMING_SPIKE_BUFFER_SIZE)) {
         return false;
     }
 

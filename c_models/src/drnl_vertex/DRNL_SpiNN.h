@@ -1,6 +1,8 @@
 #ifndef IHC_AN_softfloat_H_
 #define IHC_AN_softfloat_H_
 
+#include "spin1_api.h"
+
 //data spec regions
 typedef enum regions {
     SYSTEM,
@@ -36,34 +38,14 @@ typedef enum synapse_type_indices {
 // argument to avoid callback api
 #define DRNL_FILLER_ARG 1
 
-// sampling freq
-#define SAMPLING_FREQUENCY 44100.0
-
-// converter constant
-#define MOC_RESAMPLE_FACTOR_CONVERTER 1000.0
-
 // moc stuff
 #define MOC_BUFFER_SIZE 10
-#define MOC_DELAY 1
-#define MOC_DELAY_ARRAY_LEN 500
-#define INCOMING_SPIKE_BUFFER_SIE 256
-
-//?????????
-#define RATE_TO_ATTENTUATION_FACTOR 6e2
+#define INCOMING_SPIKE_BUFFER_SIZE 256
 
 //linear pathway. unknown what each of these are for.
 #define LIN_GAIN 200.0
 #define A 30e4
 #define C 0.25k
-#define CTBM 1e-9 * pow(10.0, 32.0 / 20.0)
-#define RECIP_CTBM 1.0 / CTBM
-#define DISP_THRESH CTBM / A
-
-// tau stuff..... unknown of human names
-#define MOC_TAU_0 0.055
-#define MOC_TAU_1 0.4
-#define MOC_TAU_2 1
-#define MOC_TAU_WEIGHT 0.9
 
 // max of 2 numbers
 #define max(a, b) \
@@ -79,35 +61,27 @@ typedef enum synapse_type_indices {
 
 // union from float and uint32. for transmission and reception
 typedef union {
-	uint32_t u;
+	uint u;
 	float f;
 } uint_float_union;
 
-// table data
-typedef struct key_mask_table {
-    uint32_t key;
-    uint32_t mask;
-    uint32_t conn_index;
-} key_mask_table_entry;
-
-// last neuron ingo
-typedef struct last_neuron_info_t{
-    uint32_t e_index;
-    uint32_t w_index;
-    uint32_t id_shift;
-} last_neuron_info_t;
-
 // params from the parameter region in sdram
 typedef struct parameters_struct{
-   uint32_t data_size;
-   uint32_t key;
-   uint32_t fs;
-   uint32_t ome_data_key;
-   uint32_t is_recording;
-   uint32_t seq_size;
-   uint32_t n_buffers_in_sdram;
-   uint32_t moc_conn_lut;
-   uint32_t n_synapse_types;
+   int data_size;
+   uint key;
+   uint ome_data_key;
+   int is_recording;
+   int seq_size;
+   int n_buffers_in_sdram;
+   int n_synapse_types;
+   uint moc_resample_factor;
+   double moc_dec_1;
+   double moc_dec_2;
+   double moc_dec_3;
+   double moc_factor_1;
+   double ctbm;
+   double receip_ctbm;
+   double disp_thresh;
 } parameters_struct;
 
 // params from the filter params region in sdram
@@ -125,7 +99,7 @@ typedef struct filter_params_struct{
 // sdram edge data from sdram
 typedef struct sdram_out_buffer_param{
     double* sdram_base_address;
-    uint32_t sdram_edge_size;
+    int sdram_edge_size;
 } sdram_out_buffer_param;
 
 #endif /* IHC_AN_H_ */
