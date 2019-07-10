@@ -50,7 +50,7 @@ class OMEMachineVertex(
                ('PROFILE', 3)])
 
     def __init__(
-            self, data, fs, num_bfs, time_scale=1, profile=True):
+            self, data, fs, num_bfs, seq_size, time_scale=1, profile=True):
         """
         
         :param data: 
@@ -68,6 +68,7 @@ class OMEMachineVertex(
         self._fs = fs
         self._num_bfs = num_bfs
         self._time_scale = time_scale
+        self._seq_size = seq_size
 
         self._data_size = (
             (len(self._data) * DataType.FLOAT_64.size) + DataType.UINT32.size)
@@ -150,9 +151,6 @@ class OMEMachineVertex(
 
         # Write number of drnls
         spec.write_value(self._num_bfs)
-
-        # Write number of macks #TODO DELETE
-        spec.write_value(0)
 
         # Write the sampling frequency
         spec.write_value(self._fs)

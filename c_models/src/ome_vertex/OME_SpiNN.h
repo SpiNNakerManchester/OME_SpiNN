@@ -9,21 +9,11 @@
 #ifndef OME_SpiNN_H_
 #define OME_SpiNN_H_
 
-#define REAL double //float
-#define REAL_CONST(x) x//x##f
+#define REAL double
 
-
-#define MAX_CHIPX 1//255
-#define MAX_CHIPY 1//255
-#define MAX_COREID 16
-#define SEED_SEL_SIZE 1024
-
-#define SEGSIZE 8//16//96//
+#define SEGSIZE 8
 
 #define MAX_SIGNAL_S 1
-
-#define TIMER2_CONF        0x82
-#define TIMER2_LOAD        0
 
 #define max(a,b) \
    ({ __typeof__ (a) _a = (a); \
@@ -38,6 +28,25 @@ typedef union
 	uint32_t u;
 	float f;
 } uint_float_union;
+
+struct parameters_struct {
+    uint total_ticks;
+    uint COREID;
+    uint NUM_DRNL;
+    uint NUM_MACK;
+    uint FS;
+    uint NUM_BFS;
+    uint KEY;
+    uint R2S_KEY;
+    uint TS;
+    REAL SHB1;
+    REAL SHB2;
+    REAL SHB3;
+    REAL SHA1;
+    REAL SHA2;
+    REAL SHA3;
+    uint DATA;
+} parameters_struct;
 
 
 #endif /* IHC_AN_H_ */

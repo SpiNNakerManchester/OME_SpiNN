@@ -396,7 +396,8 @@ class SpiNNakEarApplicationVertex(
         # build the ome machine vertex
         ome_vertex = OMEMachineVertex(
             self._model.audio_input, self._model.fs, self._model.n_channels,
-            time_scale=self._time_scale_factor, profile=False)
+            self._model.seq_size, time_scale=self._time_scale_factor,
+            profile=False)
 
         # allocate resources and updater graphs
         new_lo_atom = self._add_to_graph_components(
