@@ -8,8 +8,14 @@ typedef enum regions {
     FILTER_PARAMS,
     RECORDING,
     PROFILER,
-    SDRAM_EDGE_ADDRESS
-}regions;
+    SDRAM_EDGE_ADDRESS,
+    SYNAPSE_PARAMS,
+    POPULATION_TABLE,
+    SYNAPTIC_MATRIX,
+    SYNAPSE_DYNAMICS,
+    CONNECTOR_BUILDER,
+    DIRECT_MATRIX
+} regions;
 
 typedef enum priorities {
     SPIKE_CHECK_PRIORITY = 1, PROCESS_HANDLER_PRIORITY = 1,
@@ -17,8 +23,9 @@ typedef enum priorities {
     MC_PACKET_PRIORITY = -1, SDP_PRIORITY = 1, DMA_TRANSFER_DONE_PRIORITY = 0
 } priorities;
 
-#define REAL double
-#define REAL_CONST(x) x
+typedef enum synapse_type_indices {
+    EXCITATORY = 0, INHIBITORY = 1
+} synapse_type_indices;
 
 // recording region
 #define MOC_RECORDING_REGION 0
@@ -27,7 +34,7 @@ typedef enum priorities {
 #define BITS_IN_WORD 32
 
 // argument to avoid callback api
-#define FILLER_ARG 0
+#define DRNL_FILLER_ARG 1
 
 // sampling freq
 #define SAMPLING_FREQUENCY 44100.0
@@ -39,6 +46,7 @@ typedef enum priorities {
 #define MOC_BUFFER_SIZE 10
 #define MOC_DELAY 1
 #define MOC_DELAY_ARRAY_LEN 500
+#define INCOMING_SPIKE_BUFFER_SIE 256
 
 //?????????
 #define RATE_TO_ATTENTUATION_FACTOR 6e2
@@ -64,10 +72,10 @@ typedef enum priorities {
      _a > _b ? _a : _b; })
 
 // absolute value
-#define ABS(x) (((x)<0) ? -(x) : (x))
+#define absolute_value(x) (((x)<0) ? -(x) : (x))
 
 // which sign it is
-#define SIGN(x) (((x)<0) ? -(1.0) : (1.0))
+#define find_sign(x) (((x)<0) ? -(1.0) : (1.0))
 
 // union from float and uint32. for transmission and reception
 typedef union {
@@ -99,23 +107,24 @@ typedef struct parameters_struct{
    uint32_t seq_size;
    uint32_t n_buffers_in_sdram;
    uint32_t moc_conn_lut;
+   uint32_t n_synapse_types;
 } parameters_struct;
 
 // params from the filter params region in sdram
 typedef struct filter_params_struct{
-   REAL la1;
-   REAL la2;
-   REAL lb0;
-   REAL lb1;
-   REAL nla1;
-   REAL nla2;
-   REAL nlb0;
-   REAL nlb1;
+   double la1;
+   double la2;
+   double lb0;
+   double lb1;
+   double nla1;
+   double nla2;
+   double nlb0;
+   double nlb1;
 } filter_params_struct;
 
 // sdram edge data from sdram
 typedef struct sdram_out_buffer_param{
-    REAL* sdram_base_address;
+    double* sdram_base_address;
     uint32_t sdram_edge_size;
 } sdram_out_buffer_param;
 

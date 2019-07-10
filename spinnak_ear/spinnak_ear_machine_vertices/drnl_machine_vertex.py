@@ -81,8 +81,8 @@ class DRNLMachineVertex(
     # The number of bytes for the parameters
     # 1: n data points, 2: data key, 3: centre freq, 4: ome data key,
     # 5: recording flag, 6: seq size, 7:n buffers in sdram, 8: n mocs,
-    # 9: size of mocs
-    _N_PARAMS = 9
+    # 9: size of mocs, 10 n synapse types
+    _N_PARAMS = 10
     _N_PARAMETER_BYTES = _N_PARAMS * BYTES_PER_WORS
 
     # circular buffer to IHCs
@@ -104,6 +104,9 @@ class DRNLMachineVertex(
 
     # matrix weight scale
     GLOBAL_WEIGHT_SCALE = 1.0
+
+    # synapse types
+    N_SYNAPSE_TYPES = 2
 
     # regions
     REGIONS = Enum(
@@ -358,6 +361,9 @@ class DRNLMachineVertex(
         spec.write_value(0)
         # Write the size of the conn LUT
         spec.write_value(0)
+
+        # write n syanpses
+        spec.write_value(self.N_SYNAPSE_TYPES)
 
     def _write_sdram_edge_rgion(self, spec, machine_graph):
         """
