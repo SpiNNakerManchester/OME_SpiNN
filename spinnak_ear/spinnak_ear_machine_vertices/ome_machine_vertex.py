@@ -37,7 +37,14 @@ class OMEMachineVertex(
     """
 
     # The number of bytes for the parameters
-    _N_PARAMETER_BYTES = (9*4) + (6*8)
+    # ints 1. total_ticks, 2. seq_size, 3. key, 4. timer_tick_period
+    # floats 1. dt
+    _N_PARAMETER_BYTES = (
+        (4 * DataType.UINT32.size) + (1 * DataType.FLOAT_64.size))
+
+    # The filter coeffs
+    # 1. shb1, 2. shb2, 3. shb3, 4. sha1, 5.sha2, 6.sha3
+    _N_FILTER_COEFFS_BYTES = 6 * DataType.FLOAT_64.size
 
     # outgoing partition name from OME vertex
     OME_PARTITION_ID = "OMEData"
@@ -46,18 +53,19 @@ class OMEMachineVertex(
         value="REGIONS",
         names=[('SYSTEM', 0),
                ('PARAMETERS', 1),
-               ('RECORDING', 2),
-               ('PROFILE', 3)])
+               ('FILTER_COEFFS', 2),
+               ('DATA', 3),
+               ('PROFILE', 4)])
 
     def __init__(
-            self, data, fs, num_bfs, seq_size, time_scale=1, profile=True):
-        """
+            self, data, fs, n_channels, seq_size, time_scale=1, profile=False):
+        """ constructor for OME vertex
         
-        :param data: 
-        :param fs: 
-        :param num_bfs: 
-        :param time_scale: 
-        :param profile: 
+        :param data: the input data
+        :param fs: the sampling freq
+        :param n_channels: how many channels to process
+        :param time_scale: time scale factor
+        :param profile: bool statiugn if profiling or now
         """
 
         MachineVertex.__init__(self, label="OME Node", constraints=None)
@@ -66,15 +74,18 @@ class OMEMachineVertex(
 
         self._data = data
         self._fs = fs
-        self._num_bfs = num_bfs
+        self._n_channels = n_channels
         self._time_scale = time_scale
         self._seq_size = seq_size
 
+        # size then list of doubles
         self._data_size = (
             (len(self._data) * DataType.FLOAT_64.size) + DataType.UINT32.size)
 
         # calculate stapes hpf coefficients
-        wn = 1. / self._fs * 2. * 700.
+        wn = 1.0 / self._fs * 2.0 * 700.0
+
+        # noinspection PyTypeChecker
         [self._shb, self._sha] = sig.butter(2, wn, 'high')
 
     @property
@@ -84,9 +95,15 @@ class OMEMachineVertex(
     @property
     @overrides(MachineVertex.resources_required)
     def resources_required(self):
+        # system
         sdram = constants.SYSTEM_BYTES_REQUIREMENT
-        sdram += self._N_PARAMETER_BYTES + self._data_size
-        sdram += self._num_bfs * DataType.UINT32.size
+        # params
+        sdram += self._N_PARAMETER_BYTES
+        # data
+        sdram += self._data_size
+        # filter coeffs
+        sdram += self._N_FILTER_COEFFS_BYTES
+        # profile
         sdram += self._profile_size()
 
         resources = ResourceContainer(
@@ -108,6 +125,91 @@ class OMEMachineVertex(
     def get_n_keys_for_partition(self, partition, graph_mapper):
         return 1
 
+    def _reserve_memory_regions(self, spec):
+        """ reserve the dsg regions
+        
+        :param spec: data spec
+        :rtype: None
+        """
+
+        # reserve system region
+        spec.reserve_memory_region(
+            region=self.REGIONS.SYSTEM.value,
+            size=constants.SIMULATION_N_BYTES, label='systemInfo')
+
+        # Reserve the parameters region
+        spec.reserve_memory_region(
+            self.REGIONS.PARAMETERS.value, self._N_PARAMETER_BYTES, "params")
+
+        # reserve the filter coeffs
+        spec.reserve_memory_region(
+            self.REGIONS.FILTER_COEFFS.value, self._N_FILTER_COEFFS_BYTES,
+            "filter")
+
+        # reserve data region
+        spec.reserve_memory_region(
+            self.REGIONS.DATA.value, self._data_size, "data region")
+
+        self._reserve_profile_memory_regions(spec)
+
+    def _write_params(self, spec, routing_info):
+        """ write the basic params region
+        
+        :param spec:  data spec
+        :param routing_info: the keys holder
+        :rtype: None 
+        """
+
+        spec.switch_write_focus(self.REGIONS.PARAMETERS.value)
+
+        # Write total ticks
+        spec.write_value(len(self._data) / self._seq_size)
+
+        # write seq size
+        spec.write_value(self._seq_size)
+
+        # Write the key
+        data_key = routing_info.get_first_key_from_pre_vertex(
+            self, self.OME_PARTITION_ID)
+        spec.write_value(data_key)
+
+        # write timer period
+        spec.write_value((1e6 * self._seq_size / self._fs) * self._time_scale)
+
+        # Write dt
+        spec.write_value(1.0 / self._fs, DataType.FLOAT_64)
+
+        # write pi
+        spec.write_value()
+
+    def _write_filter_coeffs(self, spec):
+        """ write filter coeffs to dsg
+        
+        :param spec: dsg writer
+        :rtype: None 
+        """
+
+        spec.switch_write_focus(self.REGIONS.FILTER_COEFFS.value)
+
+        # write the filter params
+        for param in self._shb:
+            spec.write_value(param, data_type=DataType.FLOAT_64)
+        for param in self._sha:
+            spec.write_value(param, data_type=DataType.FLOAT_64)
+
+    def _write_input_data(self, spec):
+        """ write input data to dsg
+        
+        :param spec: data spec writer
+        :rtype: None 
+        """
+
+        spec.switch_write_focus(self.REGIONS.DATA.value)
+
+        # Write the data - Arrays must be 32-bit values, so convert
+        data = numpy.array(self._data, dtype=numpy.double)
+        spec.write_array(data.view(numpy.uint32))
+
     @inject_items({
         "routing_info": "MemoryRoutingInfos",
         "tags": "MemoryTags",
@@ -124,63 +226,16 @@ class OMEMachineVertex(
             self, spec, placement, routing_info, tags, placements,
             machine_time_step, time_scale_factor):
 
-        # reserve system region
-        spec.reserve_memory_region(
-            region=self.REGIONS.SYSTEM.value,
-            size=constants.SIMULATION_N_BYTES, label='systemInfo')
-
-        # Reserve and write the parameters region
-        region_size = self._N_PARAMETER_BYTES + self._data_size
-        region_size += self._num_bfs * DataType.UINT32.size
-        spec.reserve_memory_region(self.REGIONS.PARAMETERS.value, region_size)
-
-        self._reserve_profile_memory_regions(spec)
+        self._reserve_memory_regions(spec)
 
         # simulation.c requirements
         spec.switch_write_focus(self.REGIONS.SYSTEM.value)
         spec.write_array(simulation_utilities.get_simulation_header_array(
             self.get_binary_file_name(), machine_time_step, time_scale_factor))
 
-        spec.switch_write_focus(self.REGIONS.PARAMETERS.value)
-
-        # Write the data size in words
-        spec.write_value(len(self._data))
-
-        # Write the CoreID
-        spec.write_value(placement.p)
-
-        # Write number of drnls
-        spec.write_value(self._num_bfs)
-
-        # Write the sampling frequency
-        spec.write_value(self._fs)
-
-        spec.write_value(self._num_bfs)
-
-        # Write the key
-        data_key = routing_info.get_first_key_from_pre_vertex(
-            self, self.OME_PARTITION_ID)
-        spec.write_value(data_key)
-
-        # write the command key
-        spec.write_value(0) # TODO: remove
-
-        spec.write_value(self._time_scale)
-
-        # write the stapes high pass filter coefficients
-        # TODO:why is this needed?
-        spec.write_value(0)
-
-        # write the filter params
-        for param in self._shb:
-            spec.write_value(param, data_type=DataType.FLOAT_64)
-        for param in self._sha:
-            spec.write_value(param, data_type=DataType.FLOAT_64)
-
-        # Write the data - Arrays must be 32-bit values, so convert
-        data = numpy.array(self._data, dtype=numpy.double)
-        spec.write_array(data.view(numpy.uint32))
-
+        self._write_params(spec, routing_info)
+        self._write_filter_coeffs(spec)
+        self._write_input_data(spec)
         self._write_profile_dsg(spec)
 
         # End the specification

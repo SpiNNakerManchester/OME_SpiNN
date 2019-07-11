@@ -1,5 +1,5 @@
-#ifndef IHC_AN_softfloat_H_
-#define IHC_AN_softfloat_H_
+#ifndef DRNL_spiNN_h_
+#define DRNL_spiNN_h_
 
 #include "spin1_api.h"
 
@@ -102,4 +102,4 @@ typedef struct sdram_out_buffer_param{
     int sdram_edge_size;
 } sdram_out_buffer_param;
 
-#endif /* IHC_AN_H_ */
+#endif /* DRNL_spiNN_h_ */
