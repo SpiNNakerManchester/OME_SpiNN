@@ -75,7 +75,7 @@ typedef enum callback_priorities {
 // argument to avoid callback api
 #define OME_FILLER_ARG 0
 
-#define max(a,b) \
+#define max(a, b) \
    ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
      _a > _b ? _a : _b; })
