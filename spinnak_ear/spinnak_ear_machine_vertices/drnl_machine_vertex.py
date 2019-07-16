@@ -69,7 +69,8 @@ class DRNLMachineVertex(
         "_filter_params",
         "_seq_size",
         "_synapse_manager",
-        "_parent"
+        "_parent",
+        "_n_buffers_in_sdram_total"
     ]
 
     FAIL_TO_RECORD_MESSAGE = (
@@ -88,9 +89,6 @@ class DRNLMachineVertex(
     # 21,22 disp_thresh
     _N_PARAMS = 22
     _N_PARAMETER_BYTES = _N_PARAMS * BYTES_PER_WORS
-
-    # circular buffer to IHCs
-    N_BUFFERS_IN_SDRAM_TOTAL = 4
 
     # sdram edge address in sdram
     # 1. address, 2. size. 3. double elements
@@ -138,12 +136,24 @@ class DRNLMachineVertex(
                ('DIRECT_MATRIX', 11)])
 
     def __init__(
-            self, cf, delay, fs, n_data_points, drnl_index, is_recording,
-            profile, seq_size, synapse_manager, parent):
+            self, cf, fs, n_data_points, drnl_index, is_recording,
+            profile, seq_size, synapse_manager, parent,
+            n_buffers_in_sdram_total):
+        """ constructor for drnl
+        
+        :param cf: 
+        :param delay: 
+        :param fs: 
+        :param n_data_points: 
+        :param drnl_index: 
+        :param is_recording: 
+        :param profile: 
+        :param seq_size: 
+        :param synapse_manager: 
+        :param parent: 
+        :param n_buffers_in_sdram_total: 
         """
 
-        :param ome: The connected ome vertex
-        """
         MachineVertex.__init__(
             self, label="DRNL Node of {}".format(drnl_index), constraints=None)
         AbstractEarProfiled.__init__(self, profile, self.REGIONS.PROFILE.value)
@@ -151,15 +161,15 @@ class DRNLMachineVertex(
 
         self._cf = cf
         self._fs = fs
-        self._delay = int(delay)
         self._drnl_index = drnl_index
         self._is_recording = is_recording
         self._seq_size = seq_size
         self._synapse_manager = synapse_manager
         self._parent = parent
+        self._n_buffers_in_sdram_total = n_buffers_in_sdram_total
 
         self._sdram_edge_size = (
-            self.N_BUFFERS_IN_SDRAM_TOTAL * self._seq_size *
+            self._n_buffers_in_sdram_total * self._seq_size *
             DataType.FLOAT_64.size)
 
         self._moc_vertices = list()
@@ -179,6 +189,10 @@ class DRNLMachineVertex(
     @property
     def sdram_edge_size(self):
         return self._sdram_edge_size
+
+    @property
+    def n_data_points(self):
+        return self._num_data_points
 
     @property
     def drnl_index(self):
@@ -248,10 +262,6 @@ class DRNLMachineVertex(
 
         return [lin_a1, lin_a2, lin_b0, lin_b1, nlin_a1, nlin_a2, nlin_b0,
                 nlin_b1]
-
-    @property
-    def n_data_points(self):
-        return self._num_data_points
 
     @property
     @inject_items({
@@ -370,7 +380,7 @@ class DRNLMachineVertex(
         spec.write_value(self._seq_size)
 
         # write n buffers
-        spec.write_value(self.N_BUFFERS_IN_SDRAM_TOTAL)
+        spec.write_value(self._n_buffers_in_sdram_total)
 
         # write n synapses
         spec.write_value(self.N_SYNAPSE_TYPES)
