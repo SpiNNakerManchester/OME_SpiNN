@@ -122,7 +122,7 @@ void data_read(uint unused_a, uint unused_b) {
 	REAL *dtcm_buffer_in;
 
 	//read from DMA and copy into DTCM
-	if(read_ticks < parameters.total_ticks) {
+	if (read_ticks < parameters.total_ticks) {
 	    #ifdef PROFILE
             if (seg_index == 0) {
                 profiler_write_entry_disable_irq_fiq(
@@ -173,11 +173,7 @@ void process_chan(REAL *in_buffer) {
 	REAL filter_1;
 	REAL sub;
 
-    log_debug(
-        "[core %d] segment %d (offset=%d) starting processing\n",
-        spin1_get_core_id(), seg_index, segment_offset);
-
-	for(int i = 0; i < parameters.seg_size; i++){
+	for (int i = 0; i < parameters.seg_size; i++){
 		// concha
         filter_1 = (
             concha_filter_b[0] * in_buffer[i] + concha_filter_b[1]
@@ -213,8 +209,8 @@ void process_chan(REAL *in_buffer) {
 		past_ear_canal[1] = past_ear_canal[0];
 		past_ear_canal[0] = ear_canal_res;
 
-		ear_canal_output = 
-		    EAR_CANAL_GAIN_SCALAR * ear_canal_res + ear_canal_input;
+		ear_canal_output = (
+		    EAR_CANAL_GAIN_SCALAR * ear_canal_res + ear_canal_input);
 
 		//Acoustic Reflex
 		ar_output = A_RATT * STAPES_SCALAR * ear_canal_output;
@@ -262,7 +258,7 @@ void transfer_handler(uint unused0, uint unused1) {
     seg_index++;
 
     //choose current available buffers
-    if(!read_switch) {
+    if (!read_switch) {
         process_chan(dtcm_buffer_b);
     }
     else {
@@ -310,7 +306,7 @@ bool app_init(void)
 	dtcm_buffer_b = (REAL *) sark_alloc(parameters.seg_size, sizeof(REAL));
 	dtcm_buffer_x = (uint *) sark_alloc(parameters.seg_size, sizeof(uint));
 
-	if(dtcm_buffer_a == NULL || dtcm_buffer_b == NULL
+	if (dtcm_buffer_a == NULL || dtcm_buffer_b == NULL
 	        || dtcm_buffer_x== NULL || sdram_in_buffer == NULL) {
 		log_info(
 		    "[core %d] error - cannot allocate buffer\n",
@@ -404,6 +400,8 @@ bool app_init(void)
     return true;
 }
 
+
+//! \brief entrance method
 void c_main() {
     if (app_init()) {
         //set timer tick
@@ -418,4 +416,3 @@ void c_main() {
         simulation_run();
     }
 }
-
