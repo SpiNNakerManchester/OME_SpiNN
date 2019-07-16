@@ -26,6 +26,8 @@ class SpiNNakEar(AbstractPyNNModel):
     _DEFAULT_RANDOM_SEED = 44444
     _DEFAULT_RESAMPLE_FACTOR = 1
     _DEFAULT_SEG_SIZE = 8
+    _DEFAULT_PROFILE = False
+    _DEFAULT_N_BUFFERS_IN_SDRAM_TOTAL = 4
 
     # scale max
     FULL_SCALE = 1.0
@@ -54,13 +56,14 @@ class SpiNNakEar(AbstractPyNNModel):
         'min_audio_frequency': _DEFAULT_MIN_AUDIO_FREQUENCY,
         'max_audio_frequency': _DEFAULT_MAX_AUDIO_FREQUENCY,
         'ihcan_fibre_random_seed': _DEFAULT_RANDOM_SEED,
-        'profile': False,
+        'profile': _DEFAULT_PROFILE,
         'ihc_seeds_seed': _DEFAULT_RANDOM_SEED,
         'max_n_fibres_per_ihcan': _DEFAULT_MAX_N_FIRES_PER_IHCAN,
         'max_input_to_aggregation_group':
             _DEFAULT_MAX_INPUT_TO_AGGREGATION_GROUP,
         'resample_factor': _DEFAULT_RESAMPLE_FACTOR,
-        'seq_size': _DEFAULT_SEG_SIZE
+        'seq_size': _DEFAULT_SEG_SIZE,
+        "n_buffers_in_sdram_total": _DEFAULT_N_BUFFERS_IN_SDRAM_TOTAL
     }
 
     NAME = "SpikeSourceSpiNNakEar"
@@ -111,7 +114,9 @@ class SpiNNakEar(AbstractPyNNModel):
         # resample factor
         "_resample_factor",
         #
-        "_seq_size"
+        "_seq_size",
+        #
+        "_n_buffers_in_sdram_total"
     ]
 
     def __init__(
@@ -137,7 +142,9 @@ class SpiNNakEar(AbstractPyNNModel):
             max_input_to_aggregation_group=DEFAULT_PARAMS[
                 'max_input_to_aggregation_group'],
             resample_factor=DEFAULT_PARAMS['resample_factor'],
-            seq_size=DEFAULT_PARAMS['seq_size']):
+            seq_size=DEFAULT_PARAMS['seq_size'],
+            n_buffers_in_sdram_total=DEFAULT_PARAMS[
+                'n_buffers_in_sdram_total']):
         self._fs = fs
         self._n_channels = int(n_channels)
         self._pole_freqs = pole_freqs
@@ -160,6 +167,7 @@ class SpiNNakEar(AbstractPyNNModel):
         self._max_input_to_aggregation_group = max_input_to_aggregation_group
         self._resample_factor = resample_factor
         self._seq_size = seq_size
+        self._n_buffers_in_sdram_total = n_buffers_in_sdram_total
 
         if self._seq_size == 0:
             raise Exception("The seq size must be greater than 0")
@@ -219,6 +227,10 @@ class SpiNNakEar(AbstractPyNNModel):
                 self._max_input_to_aggregation_group,
                 self._n_channels, self._n_ihc)
         return n_final_agg_groups
+
+    @property
+    def n_buffers_in_sdram_total(self):
+        return self._n_buffers_in_sdram_total
 
     @property
     def seq_size(self):
