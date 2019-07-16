@@ -125,6 +125,10 @@ static bool initialise_recording() {
     return success;
 }
 
+//! \brief write data to sdram edge
+//! \param[in] arg_1: forced by api but used to distinguish between dmas
+//! \param[in] arg_2: forced by api but used to distinguish between dmas
+//! \return none
 void data_write(uint arg_1, uint arg_2)
 {
 	if (arg_1 == 0 && arg_2 == 0){
@@ -173,30 +177,24 @@ void data_write(uint arg_1, uint arg_2)
 	}
 }
 
+//! \brief processes a channel
+//! \param[in] out_buffer: where to store results
+//! \param[in] in_buffer: in data
+//! \param[in] mac_out_buffer: recording moc values
+//! \return segment offset
 uint process_chan(
         double *out_buffer, float *in_buffer, double *moc_out_buffer) {
 	uint segment_offset =
 	    parameters.seq_size * (
 	        (seg_index - 1) & (parameters.n_buffers_in_sdram - 1));
 
-	int i;
-	double linout1;
-	double linout2;
-	double nonlinout1a;
-	double non_linout_2a;
-	double non_linout_1b;
-	double non_linout_2b;
-	double abs_x;
-	double compressed_non_lin;
-	double filter_1;
-
 	//TODO: change MOC method to a synapse model
-	for (i = 0; i < parameters.seq_size; i++) {
+	for (int i = 0; i < parameters.seq_size; i++) {
 		//Linear Path
-        filter_1 =
+        double filter_1 =
             filter_params.lb0 * in_buffer[i] +
             filter_params.lb1 * lin_x1;
-        linout1 =
+        double linout1 =
             filter_1 - filter_params.la1 * lin_y1[1] -
             filter_params.la2 * lin_y1[0];
 
@@ -207,7 +205,7 @@ uint process_chan(
         filter_1 =
             LIN_GAIN * filter_params.lb0 * linout1 +
             filter_params.lb1 * lin_y1[0];
-        linout2 =
+        double linout2 =
             filter_1 - filter_params.la1 * lin_y2[1] -
             filter_params.la2 * lin_y2[0];
 
@@ -219,7 +217,7 @@ uint process_chan(
         filter_1 =
             filter_params.nlb0 * in_buffer[i] +
             filter_params.nlb1 * nlin_x1a;
-        nonlinout1a =
+        double nonlinout1a =
             filter_1 - filter_params.nla1 * nlin_y1a[1] -
             filter_params.nla2 * nlin_y1a[0];
 
@@ -230,7 +228,7 @@ uint process_chan(
         filter_1 =
             filter_params.nlb0 * nonlinout1a +
             filter_params.nlb1 * nlin_y1a[0];
-        non_linout_2a =
+        double non_linout_2a =
             filter_1 - filter_params.nla1 * nlin_y2a[1] -
             filter_params.nla2 * nlin_y2a[0];
 
@@ -254,8 +252,8 @@ uint process_chan(
 		non_linout_2a *= moc;
 
 		//stage 2
-		abs_x = absolute_value(non_linout_2a);
-
+		double abs_x = absolute_value(non_linout_2a);
+        double compressed_non_lin = 0.0;
 		if (abs_x < parameters.disp_thresh) {
 			compressed_non_lin = A * non_linout_2a;
 		}
@@ -269,7 +267,7 @@ uint process_chan(
         filter_1 =
             filter_params.nlb0 * compressed_non_lin +
             filter_params.nlb1 * nlin_x1b;
-        non_linout_1b =
+        double non_linout_1b =
             filter_1 - filter_params.nla1 * nlin_y1b[1] -
             filter_params.nla2 * nlin_y1b[0];
 
@@ -280,7 +278,7 @@ uint process_chan(
         filter_1 =
             filter_params.nlb0 * non_linout_1b +
             filter_params.nlb1 * nlin_y1b[0];
-        non_linout_2b =
+        double non_linout_2b =
             filter_1 - filter_params.nla1 * nlin_y2b[1] -
             filter_params.nla2 * nlin_y2b[0];
 
@@ -301,8 +299,11 @@ uint process_chan(
 	return segment_offset;
 }
 
-void app_end(uint null_a, uint null_b)
-{
+//! \brief write data to sdram edge
+//! \param[in] null_a: forced by api
+//! \param[in] null_b: forced by api
+//! \return none
+void app_end(uint null_a, uint null_b) {
     use(null_a);
 	use(null_b);
 
@@ -311,8 +312,11 @@ void app_end(uint null_a, uint null_b)
     simulation_ready_to_read();
 }
 
-void process_handler(uint null_a, uint null_b)
-{
+//! \brief write data to sdram edge
+//! \param[in] null_a: forced by api
+//! \param[in] null_b: forced by api
+//! \return none
+void process_handler(uint null_a, uint null_b) {
     use(null_a);
 	use(null_b);
 
@@ -339,6 +343,10 @@ void process_handler(uint null_a, uint null_b)
     spin1_trigger_user_event(DRNL_FILLER_ARG, DRNL_FILLER_ARG);
 }
 
+//! \brief write data to sdram edge
+//! \param[in] tid: forced by api
+//! \param[in] ttag: forced by api
+//! \return none
 void write_complete(uint tid, uint ttag) {
     use(tid);
 	use(ttag);
@@ -349,11 +357,16 @@ void write_complete(uint tid, uint ttag) {
     #endif
 
     //send MC packet to connected IHC/AN models
-    while (!spin1_send_mc_packet(parameters.key, DRNL_FILLER_ARG, NO_PAYLOAD)) {
+    while (!spin1_send_mc_packet(
+            parameters.key, DRNL_FILLER_ARG, NO_PAYLOAD)) {
         spin1_delay_us(1);
     }
 }
 
+//! \brief write data to sdram edge
+//! \param[in] mc_key: key received
+//! \param[in] payload: payload of packet
+//! \return none
 void data_read(uint mc_key, uint payload) {
     if (mc_key == parameters.ome_data_key) {
         //payload is OME output value
@@ -401,6 +414,10 @@ void data_read(uint mc_key, uint payload) {
     }
 }
 
+//! \brief write data to sdram edge
+//! \param[in] tid: forced by api
+//! \param[in] ttag: forced by api
+//! \return none
 void count_ticks(uint null_a, uint null_b) {
     use(null_a);
 	use(null_b);
@@ -414,6 +431,8 @@ void count_ticks(uint null_a, uint null_b) {
 }
 
 //application initialisation
+//! \param[in] timer_period: the pointer for the timer period
+//! \return bool stating if init was successful or not
 static inline bool app_init(uint32_t *timer_period) {
 	seg_index = 0;
 	read_switch = 0;
@@ -497,6 +516,7 @@ static inline bool app_init(uint32_t *timer_period) {
 			dtcm_buffer_moc_y[i] = 0;
 		}
 
+        // clear sdram space
         int steps = sdram_params.sdram_edge_size / sizeof(double);
 		for (int i = 0; i < steps; i++) {
 			sdram_out_buffer[i] = 0;
@@ -591,7 +611,7 @@ static inline bool app_init(uint32_t *timer_period) {
     return true;
 }
 
-//! \brief
+//! \brief entrance method
 void c_main() {
     // Get core and chip IDs
     uint32_t timer_period;
