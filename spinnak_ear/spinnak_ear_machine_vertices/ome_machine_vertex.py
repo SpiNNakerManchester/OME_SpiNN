@@ -36,6 +36,23 @@ class OMEMachineVertex(
     """ A vertex that runs the OME algorithm
     """
 
+    __slots__ = [
+        # input data
+        "_data",
+        # sampling freq
+        "_fs" 
+        # n channels in the ear
+        "_n_channels",
+        # seq size
+        "_seq_size",
+        # size of input data
+        "_data_size",
+        # filter coeffs
+        "_shb",
+        # filter coeffs
+        "_sha",
+    ]
+
     # The number of bytes for the parameters
     # ints 1. total_ticks, 2. seq_size, 3. key, 4. timer_tick_period
     # floats 1. dt
@@ -58,14 +75,13 @@ class OMEMachineVertex(
                ('PROFILE', 4)])
 
     def __init__(
-            self, data, fs, n_channels, seq_size, time_scale=1, profile=False):
+            self, data, fs, n_channels, seq_size, profile=False):
         """ constructor for OME vertex
         
         :param data: the input data
         :param fs: the sampling freq
         :param n_channels: how many channels to process
-        :param time_scale: time scale factor
-        :param profile: bool statiugn if profiling or now
+        :param profile: bool stating if profiling or now
         """
 
         MachineVertex.__init__(self, label="OME Node", constraints=None)
@@ -75,7 +91,6 @@ class OMEMachineVertex(
         self._data = data
         self._fs = fs
         self._n_channels = n_channels
-        self._time_scale = time_scale
         self._seq_size = seq_size
 
         # size then list of doubles
@@ -152,11 +167,12 @@ class OMEMachineVertex(
 
         self._reserve_profile_memory_regions(spec)
 
-    def _write_params(self, spec, routing_info):
+    def _write_params(self, spec, routing_info, time_scale_factor):
         """ write the basic params region
         
         :param spec:  data spec
         :param routing_info: the keys holder
+        :param time_scale_factor: the time scale factor
         :rtype: None 
         """
 
@@ -174,7 +190,7 @@ class OMEMachineVertex(
         spec.write_value(data_key)
 
         # write timer period
-        spec.write_value((1e6 * self._seq_size / self._fs) * self._time_scale)
+        spec.write_value((1e6 * self._seq_size / self._fs) * time_scale_factor)
 
         # Write dt
         spec.write_value(1.0 / self._fs, DataType.FLOAT_64)
@@ -233,7 +249,7 @@ class OMEMachineVertex(
         spec.write_array(simulation_utilities.get_simulation_header_array(
             self.get_binary_file_name(), machine_time_step, time_scale_factor))
 
-        self._write_params(spec, routing_info)
+        self._write_params(spec, routing_info, time_scale_factor)
         self._write_filter_coeffs(spec)
         self._write_input_data(spec)
         self._write_profile_dsg(spec)
