@@ -75,19 +75,21 @@ class SpiNNakEarApplicationVertex(
         "_synapse_dynamics",
         # fibres per.... something
         "_n_fibres_per_ihc",
-        #
+        # recording spikes
         "_is_recording_spikes",
-        #
+        # recording the attenuation value
         "_is_recording_moc",
-        #
+        # recording the probability of the inner hair to spike
+        "_is_recording_inner_hair_spike_prob",
+        # the seed for the inner hair fibre
         "_ihcan_fibre_random_seed",
         # the number of columns / rows for aggregation tree
         "_n_group_tree_rows",
-        #
+        # the synaptic manager to manage projections into drnl verts.
         "__synapse_manager",
-        #
+        # the number of drnls there are.
         "_n_dnrls",
-        #
+        # the number of agg verts which are final aggegation verts.
         "_n_final_agg_groups"
     ]
 
@@ -115,17 +117,20 @@ class SpiNNakEarApplicationVertex(
     # recording names
     SPIKES = "spikes"
     MOC = "moc"
+    SPIKE_PROB = "inner_ear_spike_probability"
 
     # named flag
     _DRNL = "drnl"
 
     # whats recordable
-    _RECORDABLES = [SPIKES, MOC]
+    _RECORDABLES = [SPIKES, MOC, SPIKE_PROB]
 
-    # recordable units
+    # recordable units NOTE RJ and ABS have no idea, but we're going with
+    # meters for completeness on the MOC.
     _RECORDABLE_UNITS = {
         SPIKES: SPIKES,
-        MOC: '??????'
+        MOC: 'meters',
+        SPIKE_PROB: "percentage"
     }
 
     # n recording regions
@@ -189,6 +194,7 @@ class SpiNNakEarApplicationVertex(
         # recording flags
         self._is_recording_spikes = False
         self._is_recording_moc = False
+        self._is_recording_inner_hair_spike_prob = False
 
         config = globals_variables.get_simulator().config
         self._time_scale_factor = helpful_functions.read_config_int(
@@ -278,8 +284,8 @@ class SpiNNakEarApplicationVertex(
             self, app_edge, partition_id, graph_mapper,
             original_source_machine_vertex):
         if ((app_edge.pre_vertex != self and app_edge.post_vertex == self)
-            and not isinstance(original_source_machine_vertex,
-                               OMEMachineVertex)):
+            and not isinstance(
+                original_source_machine_vertex, OMEMachineVertex)):
             return self._drnl_vertices
         else:
             return []
@@ -289,8 +295,8 @@ class SpiNNakEarApplicationVertex(
             self, app_edge, partition_id, graph_mapper,
             original_source_machine_vertex):
         if ((app_edge.pre_vertex == self and app_edge.post_vertex != self)
-                and isinstance(original_source_machine_vertex,
-                           ANGroupMachineVertex)
+                and isinstance(
+                    original_source_machine_vertex, ANGroupMachineVertex)
                 and original_source_machine_vertex.is_final_row):
             return [original_source_machine_vertex]
         else:
@@ -396,8 +402,7 @@ class SpiNNakEarApplicationVertex(
         # build the ome machine vertex
         ome_vertex = OMEMachineVertex(
             self._model.audio_input, self._model.fs, self._model.n_channels,
-            self._model.seq_size, time_scale=self._time_scale_factor,
-            profile=False)
+            self._model.seq_size, profile=self._profile)
 
         # allocate resources and updater graphs
         new_lo_atom = self._add_to_graph_components(
@@ -407,21 +412,22 @@ class SpiNNakEarApplicationVertex(
     def _build_drnl_verts(
             self, machine_graph, graph_mapper, new_low_atom, resource_tracker,
             ome_vertex):
-        """
+        """ build the drnl verts
         
-        :param machine_graph: 
-        :param graph_mapper: 
-        :param new_low_atom: 
-        :param resource_tracker: 
-        :param ome_vertex: 
+        :param machine_graph: machine graph
+        :param graph_mapper: graph mapper
+        :param new_low_atom: the current low atom count for the graph mapper
+        :param resource_tracker: the resource tracker for placement
+        :param ome_vertex: the ome vertex to tie edges to
         :return: 
         """
         pole_index = 0
         for _ in range(self._model.n_channels):
             drnl_vertex = DRNLMachineVertex(
-                self._model.pole_freqs[pole_index], 0.0, self._model.fs,
+                self._model.pole_freqs[pole_index], self._model.fs,
                 ome_vertex.n_data_points, pole_index, self._is_recording_moc,
-                False, self._model.seq_size, self.__synapse_manager, self)
+                self._profile, self._model.seq_size, self.__synapse_manager,
+                self, self._model.n_buffers_in_sdram_total)
             pole_index += 1
             new_low_atom = self._add_to_graph_components(
                 machine_graph, graph_mapper, new_low_atom, drnl_vertex,
@@ -447,14 +453,15 @@ class SpiNNakEarApplicationVertex(
     def _build_ihcan_vertices_and_sdram_edges(
             self, machine_graph, graph_mapper, new_low_atom,
             resource_tracker, app_edge, sdram_app_edge):
-        """
+        """ builds the ihcan verts and adds edges from drnl to them
         
-        :param machine_graph: 
-        :param graph_mapper: 
-        :param new_low_atom: 
-        :param resource_tracker: 
-        :param app_edge: 
-        :param sdram_app_edge: 
+        :param machine_graph: machine graph
+        :param graph_mapper: the graph mapper
+        :param new_low_atom: the lo atom sued to keep the graph mapper happy
+        :param resource_tracker: the resource tracker for placement
+        :param app_edge: the app edge to link all mc machine edges to
+        :param sdram_app_edge: the application sdram edge between drnl and 
+        inchan to link all sdram machine edges to. 
         :return: iterable of ihcan verts
         """
 
@@ -500,13 +507,15 @@ class SpiNNakEarApplicationVertex(
                         seed_index:
                         seed_index + self._N_SEEDS_PER_IHCAN_VERTEX],
                     self._is_recording_spikes,
+                    self._is_recording_inner_hair_spike_prob,
                     self._model.n_fibres_per_ihcan,
-                    self._model.ear_index, True, False, self._model.fs,
+                    self._model.ear_index, self._profile, self._model.fs,
                     chosen_indices.count(self.LSR_FLAG),
                     chosen_indices.count(self.MSR_FLAG),
                     chosen_indices.count(self.HSR_FLAG),
                     self._model.max_n_fibres_per_ihcan,
-                    drnl_vertex.n_data_points)
+                    drnl_vertex.n_data_points,
+                    self._model.n_buffers_in_sdram_total)
                 seed_index += self._N_SEEDS_PER_IHCAN_VERTEX
                 ichans.append(vertex)
 
@@ -596,8 +605,6 @@ class SpiNNakEarApplicationVertex(
         application_graph.add_edge(mc_app_edge, self.MC_APP_EDGE_PARTITION_ID)
         application_graph.add_edge(
             sdram_app_edge, self.SDRAM_APP_EDGE_PARTITION_ID)
-
-
 
         # atom tracker
         current_atom_count = 0
