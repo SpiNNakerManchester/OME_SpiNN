@@ -67,6 +67,8 @@ class IHCANMachineVertex(
         "_n_msr",
         # n high freq hair cells in here
         "_n_hsr",
+        # the seg size
+        "_seg_size",
         # data points.....
         "_num_data_points",
         # recording size
@@ -169,16 +171,28 @@ class IHCANMachineVertex(
     # ???????????????
     AN_REPRO_HSR = (AN_CLEFT_HSR * _R) / _X
 
-    # The number of bytes for the parameters
-    # 1. n data points, 2. drnl processor, 3. my core id, 4. drnl app id,
-    # 5. drnl key, 6. resample factor, 7. fs, 8. my key, 9. is recording,
-    # 10. n lsr, 11. n msr, 12. nhsr,
-    _N_PARAMETERS = 12
+    # The number of params for the parameters region
+    # 1. resampling factor, 2. n fibres, 3. seg size 4. number of sdram buffers.
+    # 5. num_lsr. 6. num_msr. 7. num_hsr. 8. my_key
+    _N_PARAMETERS = 8
+
+    # the number of params for the sdram edge region
+    _N_SDRAM_EDGE_PARAMS = 1
+
+    # the number of params in the dt params region
+    _N_DT_PARAMS = 2
+
+    # the number of params in the synapse params region
+    _N_SYANPSE_PARAMS = 5
+
+    # the number of params in the cilia_constants_param region
+    _N_CILIA_PARAMS = 2
+
+    # the number of params in the inner ear params region
+    _N_INNER_EAR_PARAM_PARAMS = 15
 
     # the number of elements in the seeds
     N_SEEDS_PER_IHCAN_VERTEX = 4
-
-    _SDRAM_EDGE_PARAMS = 1
 
     # unknown what this magic number is
     MAGIC_1 = 1000.0
@@ -192,11 +206,13 @@ class IHCANMachineVertex(
         names=[('SYSTEM', 0),
                ('PARAMETERS', 1),
                ('CILIA_PARAMS', 2),
-               ('RANDOM_SEEDS', 3),
-               ('RECORDING', 4),
-               ('SDRAM_EDGE', 5),
-               ('PROFILE', 6),
-               ('PROVENANCE', 7)])
+               ('INNER_EAR_PARAMS', 3),
+               ('DT_BASED_PARAMS', 4),
+               ('RANDOM_SEEDS', 5),
+               ('RECORDING', 6),
+               ('SDRAM_EDGE', 7),
+               ('PROFILE', 8),
+               ('PROVENANCE', 9)])
 
     # provenance items
     EXTRA_PROVENANCE_DATA_ENTRIES = Enum(
@@ -232,7 +248,7 @@ class IHCANMachineVertex(
             self, resample_factor, seed, is_recording_spikes,
             is_recording_prob_of_spike, n_fibres, ear_index,
             profile, fs, n_lsr, n_msr, n_hsr, max_n_fibres, drnl_data_points,
-            n_buffers_in_sdram_total):
+            n_buffers_in_sdram_total, seg_size):
         """
         :param ome: The connected ome vertex    """
 
@@ -252,6 +268,7 @@ class IHCANMachineVertex(
         self._fs = fs
         self._n_atoms = n_fibres
         self._n_buffers_in_sdram_total = n_buffers_in_sdram_total
+        self._seg_size = seg_size
 
         if n_lsr + n_msr + n_hsr > max_n_fibres:
             raise Exception(
@@ -340,19 +357,23 @@ class IHCANMachineVertex(
     @property
     @overrides(MachineVertex.resources_required)
     def resources_required(self):
-        # params region
-        sdram = self._N_PARAMETERS * constants.WORD_TO_BYTE_MULTIPLIER
+
         # system region
-        sdram += constants.SYSTEM_BYTES_REQUIREMENT
-        # sdram edge region
-        sdram += self._SDRAM_EDGE_PARAMS * constants.WORD_TO_BYTE_MULTIPLIER
+        sdram = constants.SYSTEM_BYTES_REQUIREMENT
+
+        # params + cilia + inner ear + seeds + sdram edge + DT elements
+        sdram_params = (
+            self._N_PARAMETERS + self._N_CILIA_PARAMS + self._N_DT_PARAMS +
+            + self._N_INNER_EAR_PARAM_PARAMS + self._N_SDRAM_EDGE_PARAMS +
+            self.N_SEEDS_PER_IHCAN_VERTEX)
+        sdram += sdram_params * constants.WORD_TO_BYTE_MULTIPLIER
+
         # recording probability spike region
         sdram += self._recording_spike_probability_size
-        # random seed region
-        sdram += (
-            self.N_SEEDS_PER_IHCAN_VERTEX * constants.WORD_TO_BYTE_MULTIPLIER)
+
         # profile region
         sdram += self._profile_size()
+
         # provenance region
         sdram += self.get_provenance_data_size(
             self.EXTRA_PROVENANCE_DATA_ENTRIES.N_PROVENANCE_ELEMENTS)
@@ -388,53 +409,43 @@ class IHCANMachineVertex(
     def get_n_keys_for_partition(self, partition, graph_mapper):
         return self._n_atoms
 
-    def _fill_in_parameter_region(
-            self, spec, machine_graph, routing_info, placements, placement):
-
-        drnl_key = None
+    def _fill_in_sdram_edge_region(self, spec, routing_info, machine_graph):
         sdram_partition = None
         for edge in machine_graph.get_edges_ending_at_vertex(self):
             if isinstance(edge.pre_vertex, DRNLMachineVertex):
-                drnl_processor = (
-                    placements.get_placement_of_vertex(edge.pre_vertex).p)
-                if edge.traffic_type == EdgeTrafficType.MULTICAST:
-                    drnl_key = routing_info.get_first_key_for_edge(edge)
                 if edge.traffic_type == EdgeTrafficType.SDRAM:
                     sdram_partition = \
                         machine_graph.get_outgoing_partition_for_edge(edge)
+        spec.switch_write_focus(self.REGIONS.SDRAM_EDGE.value)
+        spec.write_value(sdram_partition.sdram_base_address)
+
+    def _fill_in_parameter_region(self, spec, routing_info):
 
         # write parameters
         spec.switch_write_focus(self.REGIONS.PARAMETERS.value)
 
-        # Write the data size in words
-        spec.write_value(
-            self._num_data_points *
-            (float(DataType.FLOAT_32.size) /
-             constants.WORD_TO_BYTE_MULTIPLIER))
-
-        # Write the DRNL data key
-        spec.write_value(drnl_key)
-
         # Write the spike resample factor
         spec.write_value(self._re_sample_factor)
 
-        # Write the sampling frequency
-        spec.write_value(self._fs)
+        # write n fibres
+        spec.write_value(self._n_atoms)
 
-        # Write the routing key
-        key = routing_info.get_first_key_from_pre_vertex(
-            self, self.IHCAN_PARTITION_ID)
-        spec.write_value(key)
+        # write seg size
+        spec.write_value(self._seg_size)
 
-        # Write is recording bool
-        spec.write_value(int(self._is_recording_spikes))
+        # write n sdram buffers
+        spec.write_value(self._n_buffers_in_sdram_total)
+
 
         # Write number of spontaneous fibres
         spec.write_value(int(self._n_lsr))
         spec.write_value(int(self._n_msr))
         spec.write_value(int(self._n_hsr))
 
-        spec.write_value(self._n_buffers_in_sdram_total)
+        # Write the routing key
+        key = routing_info.get_first_key_from_pre_vertex(
+            self, self.IHCAN_PARTITION_ID)
+        spec.write_value(key)
 
     def _write_seed_region(self, spec):
         # Write the seed
@@ -454,10 +465,38 @@ class IHCANMachineVertex(
             region=self.REGIONS.SYSTEM.value,
             size=constants.SIMULATION_N_BYTES, label='systemInfo')
 
-        # Reserve and write the parameters region
+        # Reserve the parameters region
         spec.reserve_memory_region(
             self.REGIONS.PARAMETERS.value,
             self._N_PARAMETERS * constants.WORD_TO_BYTE_MULTIPLIER, "params")
+
+        # Reserve the cilia params region
+        spec.reserve_memory_region(
+            self.REGIONS.CILIA_PARAMS.value,
+            self._N_CILIA_PARAMS * constants.WORD_TO_BYTE_MULTIPLIER,
+            "cilia params")
+
+        # Reserve the inner ear params region
+        spec.reserve_memory_region(
+            self.REGIONS.INNER_EAR_PARAMS.value,
+            self._N_INNER_EAR_PARAM_PARAMS * constants.WORD_TO_BYTE_MULTIPLIER,
+            "inner ear params")
+
+        # Reserve the dt based params
+        spec.reserve_memory_region(
+            self.REGIONS.DT_BASED_PARAMS.value,
+            self._N_DT_PARAMS * constants.WORD_TO_BYTE_MULTIPLIER,
+            "dt based params")
+
+        spec.reserve_memory_region(
+            self.REGIONS.RANDOM_SEEDS.value,
+            self.N_SEEDS_PER_IHCAN_VERTEX * constants.WORD_TO_BYTE_MULTIPLIER,
+            "random seed region")
+
+        spec.reserve_memory_region(
+            self.REGIONS.SDRAM_EDGE.value,
+            self._N_SDRAM_EDGE_PARAMS * constants.WORD_TO_BYTE_MULTIPLIER,
+            "sdram edge region")
 
         # reserve provenance data region
         self.reserve_provenance_data_region(spec)
@@ -467,11 +506,6 @@ class IHCANMachineVertex(
             self.REGIONS.RECORDING.value,
             recording_utilities.get_recording_header_size(
                 self.RECORDING_REGIONS.N_RECORDING_REGIONS.value))
-
-        # reserve random seed region
-        spec.reserve_memory_region(
-
-        )
 
         # profiler region
         self._reserve_profile_memory_regions(spec)
@@ -501,8 +535,10 @@ class IHCANMachineVertex(
             self.get_binary_file_name(), machine_time_step,
             time_scale_factor))
 
-        self._fill_in_parameter_region(
-            spec, machine_graph, routing_info, placements, placement)
+        # fill in the parameters region
+        self._fill_in_parameter_region(spec, routing_info)
+
+
 
         # Write the recording regions
         spec.switch_write_focus(self.REGIONS.RECORDING.value)
