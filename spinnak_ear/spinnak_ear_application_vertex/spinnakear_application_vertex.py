@@ -137,7 +137,6 @@ class SpiNNakEarApplicationVertex(
     _N_POPULATION_RECORDING_REGIONS = 1
 
     # random numbers
-    _N_SEEDS_PER_IHCAN_VERTEX = 4
     _FINAL_ROW_N_ATOMS = 256
     MAX_TIME_SCALE_FACTOR_RATIO = 22050
     HSR_FLAG = 2
@@ -471,10 +470,12 @@ class SpiNNakEarApplicationVertex(
         n_ihcans = self._model.n_channels * self._model.n_ihc
         seed_index = 0
         random_range = numpy.arange(
-            n_ihcans * self._N_SEEDS_PER_IHCAN_VERTEX, dtype=numpy.uint32)
+            n_ihcans * IHCANMachineVertex.N_SEEDS_PER_IHCAN_VERTEX,
+            dtype=numpy.uint32)
         numpy.random.seed(self._model.ihc_seeds_seed)
         ihc_seeds = numpy.random.choice(
-            random_range, int(n_ihcans * self._N_SEEDS_PER_IHCAN_VERTEX),
+            random_range,
+            int(n_ihcans * IHCANMachineVertex.N_SEEDS_PER_IHCAN_VERTEX),
             replace=False)
 
         for drnl_vertex in self._drnl_vertices:
@@ -505,7 +506,8 @@ class SpiNNakEarApplicationVertex(
                     self._model.resample_factor,
                     ihc_seeds[
                         seed_index:
-                        seed_index + self._N_SEEDS_PER_IHCAN_VERTEX],
+                        seed_index +
+                        IHCANMachineVertex.N_SEEDS_PER_IHCAN_VERTEX],
                     self._is_recording_spikes,
                     self._is_recording_inner_hair_spike_prob,
                     self._model.n_fibres_per_ihcan,
@@ -516,7 +518,7 @@ class SpiNNakEarApplicationVertex(
                     self._model.max_n_fibres_per_ihcan,
                     drnl_vertex.n_data_points,
                     self._model.n_buffers_in_sdram_total)
-                seed_index += self._N_SEEDS_PER_IHCAN_VERTEX
+                seed_index += IHCANMachineVertex.N_SEEDS_PER_IHCAN_VERTEX
                 ichans.append(vertex)
 
                 new_low_atom = self._add_to_graph_components(
