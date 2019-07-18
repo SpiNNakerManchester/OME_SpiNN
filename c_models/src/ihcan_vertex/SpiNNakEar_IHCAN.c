@@ -1,218 +1,507 @@
 /*
  ============================================================================
  Name        : SpiNNakEar_IHCAN.c
- Author      : Robert James
+ Author      : Robert James & Alan Barry Stokes
  Version     : 1.0
- Description : Inner Hair Cell + Auditory Nerve model for use in SpiNNakEar system
+ Description : Inner Hair Cell + Auditory Nerve model for use in SpiNNakEar
+               system
  ============================================================================
  */
 
 #include <stdio.h>
-#include <stdlib.h>
-#include <stdfix.h>
 #include "IHC_AN_softfloat.h"
 #include "spin1_api.h"
-#include "math.h"
 #include "random.h"
 #include "stdfix-exp.h"
 #include "log.h"
+#include "bit_field.h"
 #include <data_specification.h>
 #include <recording.h>
 #include <profiler.h>
-#include <profile_tags.h>
 #include <simulation.h>
 #include <debug.h>
 
-//#define PROFILE
-#define BITFIELD //define this if using spike (bitfield) output
+//****************** provenance data ***************************//
 
-//=========GLOBAL VARIABLES============//
-REAL Fs,dt,max_rate;
-uint coreID;
-uint chipID;
-uint test_DMA;
-uint seg_index;
-uint cbuff_numseg;
-uint shift_index;
-uint spike_count=0;
-uint data_read_count=0;
-uint data_write_count=0;
-uint mc_rx_count=0;
+//! \brief how many spikes sent
+int spike_count = 0;
 
-uint read_switch;
-bool write_switch;
-bool app_complete=false;
-uint processing;
-uint index_x;
-uint index_y;
-REAL r_max_recip;
-REAL dt_spikes;
-REAL dt_segment;
-uint spike_seg_size;
+//! \brief how many reads done
+int data_read_count = 0;
+
+//! \brief how many writes done for spikes
+int data_write_count_spikes = 0;
+
+//! \brief how many writes done for spikes prob
+int data_write_count_spikes_prob = 0;
+
+//! \brief how many mc packets received
+int mc_rx_count = 0;
+
+//! \brief state variable for which sdram buffer to read
+int seg_index = 0;
+
+// ****************** globals ******************************//
+
+//! \brief sim ticks
+static uint32_t simulation_ticks = 0;
+
+//! \brief infinite run pointer
+static uint32_t infinite_run;
+
+//! \brief time / ticks done
+static uint32_t time;
+
+//********************* switch **************//
+
+//! \brief bool state for switching dtcm input buffers
+uint read_switch = 0;
+
+//! \brief bool state for switching dtcm output buffers for spikes
+bool write_switch_spikes = 0;
+
+//! \brief bool state for switching dtcm output buffers for spikes prob
+bool write_switch_spikes_prob = 0;
+
+//! \brief how many elements are needed for seg output
 uint seg_output;
-uint seg_output_n_bytes;
-SEED_TYPE local_seed;
 
-int start_count_process;
-int end_count_process;
-int start_count_read;
-int end_count_read;
-int start_count_write;
-int end_count_write;
-uint refrac[NUMFIBRES];
+//! \brief how many bytes are needed for the seg output per spike buffer
+int seg_output_n_bytes_spikes;
 
+//! \brief how mnay words are needed for the seg output per spike buffer
+int seg_output_n_words_spikes;
+
+//! \brief how many bytes are needed for the seg output per spike prob buffer
+int seg_output_n_bytes_spikes_prob;
+
+//! \random number generator seed
+mars_kiss64_seed_t local_seed;
+
+//! \brief refrac
+uint *refrac;
+
+//**************** buffers **********************//
+//! \brief input buffers
 double *dtcm_buffer_a;
 double *dtcm_buffer_b;
-uint32_t *dtcm_buffer_x;
-uint32_t *dtcm_buffer_y;
 
-double *sdramin_buffer;
+//! \brief output buffers for spikes
+bit_field_t dtcm_buffer_x_spikes;
+bit_field_t dtcm_buffer_y_spikes;
 
-IHC_ciliaParams Cilia;
-IHC_preSynParams preSyn;
-IHC_synParams Synapse;
+//! \brief output buffers for spike prob
+float *dtcm_buffer_x_spikes_prob;
+float *dtcm_buffer_y_spikes_prob;
 
-startupVars startupValues;
-//recurring values
-double past_ciliaDisp;
-REAL IHCVnow;
-REAL mICaCurr;
-REAL CaCurr[NUMFIBRES];
-REAL ANCleft[NUMFIBRES];
-REAL ANAvail[NUMFIBRES];
-REAL ANRepro[NUMFIBRES];
+//! \brief sdram edge buffer
+double *sdram_in_buffer;
 
-uint32_t NUMLSR,NUMMSR,NUMHSR;
+//************************* cilia **************** //
 
-startupVars generateStartupVars(void)
-{
-	startupVars out;
-	REAL Gu0,kt0,IHCV,gmax,u0,u1,s1,s0,ga,gk,et,ek,rpc,ekp,gamma,
-	beta,mICaCurr,mICaCurr_pow,gmaxcalsr,gmaxcamsr,gmaxcahsr,eca,
-	taucalsr,taucamsr,taucahsr,CaCurrLSR,CaCurrMSR,CaCurrHSR,
-	kt0LSR,kt0MSR,kt0HSR,ANCleftLSR,ANCleftMSR,ANCleftHSR,ANAvailLSR,
-	ANAvailMSR,ANAvailHSR,ANReproLSR,ANReproMSR,ANReproHSR,z,power,y,
-	x,l,r,MLSR,MMSR,MHSR;
+//! \brief
+double cilia_filter_b2;
 
-	//======Calculate Gu0===========//
-	gmax=6e-9;
-	u0=0.3e-9;
-	u1=1e-9;
-	s1=1e-9;
-	s0=6e-9;
-	ga=1e-10;
-	Gu0=ga+gmax/(1+(exp(u0/s0)*(1+exp(u1/s1))));
-	//======Calculate IHCVnow=========//
-	gk=2.1e-8;
-	et=0.1;
-	ek=-0.08;
-	rpc=0.04;
-	ekp=ek+rpc*et;
-	IHCV=(gk*ekp+Gu0*et)/(Gu0+gk);
+//! \brief
+double cilia_filter_a1;
 
-	//=======Calculate mICaCurrent========//
-	gamma=100.;
-	beta=400.;
-	mICaCurr=1./(1.+exp(-gamma*IHCV)*(1./beta));
+//! \brief
+float cilia_dt_cap;
 
-	//=======Calculate CaCurrent========//
-	gmaxcalsr=20e-9;
-	gmaxcamsr=20e-9;
-	gmaxcahsr=20e-9;
-	eca=0.066;
-	taucalsr=200e-6;
-	taucamsr=350e-6;
-	taucahsr=500e-6;
-	mICaCurr_pow=mICaCurr;
-	for (int i=0;i<2;i++)
-	{
-	    mICaCurr_pow*=mICaCurr;
-	}
-	CaCurrLSR=((gmaxcalsr*mICaCurr_pow)*(IHCV-eca))*taucalsr;
-	CaCurrMSR=((gmaxcamsr*mICaCurr_pow)*(IHCV-eca))*taucamsr;
-	CaCurrHSR=((gmaxcahsr*mICaCurr_pow)*(IHCV-eca))*taucahsr;
+//! \brief
+float dt_tau_m;
 
-	//========Calculate AN==========//
-	z=40e12;
-	power=3;
-	y=15;
-	x=300;
-	MLSR=4;
-	MMSR=4;
-	MHSR=4;
-	l=150;
-	r=300;
+//! ********************** param structs ***************** //
 
-	kt0LSR=-z*pow(CaCurrLSR,power);
-	kt0MSR=-z*pow(CaCurrMSR,power);
-	kt0HSR=-z*pow(CaCurrHSR,power);
-	ANCleftLSR=(kt0LSR*y*MLSR)/(y*(l+r)+kt0LSR*l);
-	ANCleftMSR=(kt0MSR*y*MMSR)/(y*(l+r)+kt0MSR*l);
-	ANCleftHSR=(kt0HSR*y*MHSR)/(y*(l+r)+kt0HSR*l);
-	ANAvailLSR=round((ANCleftLSR*(l+r))/kt0LSR);
-	ANAvailMSR=round((ANCleftMSR*(l+r))/kt0MSR);
-	ANAvailHSR=round((ANCleftHSR*(l+r))/kt0HSR);
-	ANReproLSR=(ANCleftLSR*r)/x;
-	ANReproMSR=(ANCleftMSR*r)/x;
-	ANReproHSR=(ANCleftHSR*r)/x;
+//! \brief struct holding params from the param region
+parameters_struct parameters;
 
-	out.IHCVnow0=IHCV;
-	out.Ekp=ekp;
-	out.mICaCurr0=mICaCurr;
-	out.CaCurrLSR0=CaCurrLSR;
-	out.CaCurrMSR0=CaCurrMSR;
-	out.CaCurrHSR0=CaCurrHSR;
-	out.ANCleftLSR0=ANCleftLSR;
-	out.ANCleftMSR0=ANCleftMSR;
-	out.ANCleftHSR0=ANCleftHSR;
-	out.ANAvailLSR0=ANAvailLSR;
-	out.ANAvailMSR0=ANAvailMSR;
-	out.ANAvailHSR0=ANAvailHSR;
-	out.ANReproLSR0=ANReproLSR;
-	out.ANReproMSR0=ANReproMSR;
-	out.ANReproHSR0=ANReproHSR;
+//! \brief struct holding params from the sysnpase region
+synapse_params_struct synapse_params;
 
-	return out;
-}
-//data spec regions
-typedef enum regions {
-    SYSTEM,
-    PARAMS,
-    RECORDING,
-    PROFILER}regions;
+//! \brief cilia params
+cilia_constants_struct cilia_params;
 
-// The parameters to be read from memory
-enum params {
-    DATA_SIZE = 0,
-    DRNLCOREID,
-    COREID,
-    DRNLAPPID,
-    DRNL_KEY,
-    RESAMPLE,
-    FS,
-    AN_KEY,
-    IS_RECORDING,
-    N_LSR,
-    N_MSR,
-    N_HSR,
-    SEED
-};
+//! \brief inner ear params
+inner_ear_param_struct inner_ear_params;
 
-uint data_size;
-uint placement_coreID;
-uint drnl_coreID;
-uint drnl_appID;
-uint drnl_key;
-uint mask;
-uint resamp_fac;
-uint sampling_freq;
-uint an_key;
-uint32_t *seeds;
-uint32_t is_recording;
+//! *********************** recurring values ******************//
+
+//! \brief 
+double past_cilia_disp = 0.0;
+
+//! \brief 
+float ihcv_now;
+
+//! \brief
+float m_ica_curr;
+
+//! \brief
+float dt_spikes;
+
+//! \brief recording flags
 uint32_t recording_flags;
-//uint32_t TOTAL_TICKS;
-static uint32_t simulation_ticks=0;
-uint32_t time;
+
+//! ****************************** arrays ******************//
+
+//! \brief
+float *ca_curr;
+
+//! \brief
+float *an_cleft;
+
+//! \brief
+float *an_avail;
+
+//! \brief
+float *an_repro;
+
+//! \brief
+float *rec_tau_ca;
+
+//! \brief
+float *g_max_ca;
+
+//! \brief
+float *ca_th;
+
+//! \brief
+uint *refact;
+
+//! \brief tracker for when recording finishes putting spike data into sdram.
+//! Switches write buffers and handles profiling if needed
+void record_finished_spikes(void) {
+    #ifdef PROFILE
+        profiler_write_entry_disable_irq_fiq(PROFILER_EXIT | PROFILER_TIMER);
+    #endif
+    data_write_count_spikes++;
+    //flip write buffers
+    write_switch_spikes = !write_switch_spikes;
+}
+
+//! \brief tracker for when recording finishes putting spike prob data into
+//! sdram. Switches write buffers and handles profiling if needed
+void record_finished_spikes_prob(void) {
+    #ifdef PROFILE
+        profiler_write_entry_disable_irq_fiq(PROFILER_EXIT | PROFILER_TIMER);
+    #endif
+    data_write_count_spikes_prob++;
+    //flip write buffers
+    write_switch_spikes_prob = !write_switch_spikes_prob;
+}
+
+//! \brief user event for writing results
+//! \param[in] null_a: forced by api
+//! \param[in] null_b: forced by api
+//! \return none
+void data_write(uint null_a, uint null_b) {
+    use(null_a);
+    use(null_b);
+
+    if (recording_is_channel_enabled(
+	        recording_flags, SPIKE_RECORDING_REGION_ID)) {
+         bit_field_t dtcm_buffer_out;
+
+        //Select available buffer
+        if (!write_switch_spikes) {
+            dtcm_buffer_out = dtcm_buffer_x_spikes;
+        }
+        else {
+            dtcm_buffer_out = dtcm_buffer_y_spikes;
+        }
+
+        recording_record_and_notify(
+            SPIKE_RECORDING_REGION_ID, &dtcm_buffer_out,
+            seg_output_n_bytes_spikes, record_finished_spikes);
+    }
+
+    if (recording_is_channel_enabled(
+	        recording_flags, SPIKE_PROBABILITY_REGION_ID)) {
+        float *dtcm_buffer_out;
+        //Select available buffer
+        if (!write_switch_spikes_prob) {
+            dtcm_buffer_out = dtcm_buffer_x_spikes_prob;
+        }
+        else {
+            dtcm_buffer_out = dtcm_buffer_y_spikes_prob;
+        }
+
+        recording_record_and_notify(
+            SPIKE_PROBABILITY_REGION_ID, dtcm_buffer_out,
+            seg_output_n_bytes_spikes_prob, record_finished_spikes_prob);
+    }
+}
+
+// processes multicast packets
+//! \param[in] mc_key: the multicast key
+//! \param[in] payload: the payload of the MC packet
+//! \return None
+void data_read(uint mc_key, uint payload) {
+    use(mc_key);
+    use(payload);
+
+    // measure time between each call of this function (should approximate
+    // the global clock in OME)
+    #ifdef PROFILE
+        profiler_write_entry_disable_irq_fiq(
+            PROFILER_ENTER | PROFILER_TIMER);
+    #endif
+
+    double *dtcm_buffer_in;
+
+    //read from DMA and copy into DTCM
+    //assign receive buffer
+    if (!read_switch) {
+        dtcm_buffer_in = dtcm_buffer_a;
+        read_switch = 1;
+    } else {
+        dtcm_buffer_in = dtcm_buffer_b;
+        read_switch = 0;
+    }
+    spin1_dma_transfer(
+        DMA_READ,
+        &sdram_in_buffer[
+            (seg_index & (parameters.number_of_sdram_buffers - 1)) *
+            parameters.seg_size],
+        dtcm_buffer_in, DMA_READ, parameters.seg_size * sizeof(double));
+
+    data_read_count ++;
+}
+
+//! \brief Main segment processing loop
+//select correct output buffer type
+void process_chan(double *in_buffer) {
+
+    bit_field_t out_buffer_spikes = NULL;
+	if (recording_is_channel_enabled(
+	        recording_flags, SPIKE_RECORDING_REGION_ID)) {
+        if (!write_switch_spikes) {
+            out_buffer_spikes = dtcm_buffer_x_spikes;
+        } else {
+            out_buffer_spikes = dtcm_buffer_y_spikes;
+        }
+        clear_bit_field(out_buffer_spikes, seg_output_n_words_spikes);
+	}
+	float *out_buffer_spike_prob = NULL;
+	if (recording_is_channel_enabled(
+	        recording_flags, SPIKE_PROBABILITY_REGION_ID)) {
+	    if (!write_switch_spikes_prob) {
+            out_buffer_spike_prob = dtcm_buffer_x_spikes_prob;
+        } else {
+            out_buffer_spike_prob = dtcm_buffer_y_spikes_prob;
+        }
+	}
+
+	for(int i = 0; i < parameters.seg_size; i++) {
+
+	    //==========cilia_params filter===============//
+        double filter_1 = (
+            CILIA_FILTER_B1 * in_buffer[i] + cilia_filter_b2 * past_cilia_disp);
+
+        double cilia_disp = filter_1 - cilia_filter_a1 * past_cilia_disp;
+		past_cilia_disp = cilia_disp * CILIA_C;
+
+		//===========Apply Scaler============//
+  	  	float utconv = past_cilia_disp;
+
+		//=========Apical Conductance========//
+		float ex1 = expk((accum)( -(utconv - CILIA_U1) * cilia_params.recips1));
+		float ex2 = expk((accum)( -(utconv - CILIA_U0) * cilia_params.recips0));
+  	  	float guconv = (CILIA_GA + (CILIA_G_MAX / (1.0f + ex2 * (1.0f + ex1))));
+
+		//========Receptor Potential=========//
+		ihcv_now += (
+		    ((-guconv * (ihcv_now - CILIA_ET)) -
+		     (CILIA_GK * (ihcv_now - inner_ear_params.ekp))) * cilia_dt_cap);
+
+		//================mICa===============//
+		float ex3 = expk((accum) - GAMMA * ihcv_now);
+		float mi_ca_inf = 1.0f / (1.0f + ex3 * RECIP_BETA);
+		m_ica_curr += (mi_ca_inf - m_ica_curr) * dt_tau_m;
+
+		//================ICa================//
+		float mica_pow_conv = m_ica_curr;
+		for (float k = 0; k < POWER - 1; k++) {
+			mica_pow_conv *= m_ica_curr;
+		}
+		//============Fibres=============//
+		for (int j = 0; j < parameters.number_fibres; j++) {
+
+			//======Synaptic Ca========//
+			float i_ca = g_max_ca[j] * mica_pow_conv * (ihcv_now - ECA);
+			float sub1 = i_ca * parameters.dt;
+			float sub2 = (ca_curr[j] * parameters.dt) * rec_tau_ca[j];
+			ca_curr[j] += sub1 - sub2;
+
+			//invert Ca
+			float pos_ca_curr = -1.0f * ca_curr[j];
+			if (i % parameters.resampling_factor == 0) {
+
+				//=====Vesicle Release Rate MAP_BS=====//
+				float ca_curr_pow = pos_ca_curr * parameters.z;
+				for(float k = 0.0; k < POWER - 1; k++) {
+					ca_curr_pow *= pos_ca_curr * parameters.z;
+				}
+
+				//=====Release Probability=======//
+				float release_prob = ca_curr_pow * dt_spikes;
+				float m_q = synapse_params.m[j] - an_avail[j];
+				if (m_q < 0.0f) {
+					m_q = 0.0f;
+				}
+
+				//===========Ejected============//
+				float release_prob_pow = 1.0f;
+				for (float k = 0; k < an_avail[j]; k++) {
+					release_prob_pow =
+					    release_prob_pow * (1.0f - release_prob);
+				}
+
+				float probability = 1.0f - release_prob_pow;
+				if (refrac[j] > 0) {
+					refrac[j] --;
+				}
+
+                float ejected;
+                uint spikes;
+				if (probability > (
+				        (float) mars_kiss64_seed(local_seed) * R_MAX_RECIP)) {
+					ejected = 1.0f;
+					if (refrac[j] <= 0) {
+						spikes = 1;
+                        spin1_send_mc_packet(
+                            parameters.my_key | j, 0, NO_PAYLOAD);
+
+						refrac[j]= (uint) (
+						    synapse_params.refrac_period + (
+						        ((float) mars_kiss64_seed(local_seed) *
+						        R_MAX_RECIP) * synapse_params.refrac_period)
+						         + 0.5f);
+					} else {
+						spikes = 0;
+					}
+				} else {
+					ejected = 0.0f;
+					spikes = 0;
+				}
+
+				//=========Reprocessed=========//
+				float repro_rate = synapse_params.xdt;
+				float x_pow = 1.0f;
+				float y_pow = 1.0f;
+
+				for (float k = 0.0; k < m_q; k++) {
+					y_pow *= (1.0f - synapse_params.ydt);
+				}
+				for(float k = 0; k < an_repro[j]; k++) {
+					x_pow *= (1.0f - repro_rate);
+				}
+
+				probability = 1.0f - x_pow;
+				float reprocessed;
+				if (probability > (
+				        (float) mars_kiss64_seed(local_seed) * R_MAX_RECIP)) {
+					reprocessed = 1.0f;
+				} else {
+					reprocessed = 0.0f;
+				}
+
+				//========Replenish==========//
+				probability = 1.0f - y_pow;
+				float replenish;
+				if (probability > (
+				        (float) mars_kiss64_seed(local_seed) * R_MAX_RECIP)) {
+					replenish = 1.0f;
+				} else {
+					replenish = 0.0f;
+				}
+
+				//==========Update Variables=========//
+				an_avail[j] = an_avail[j] + replenish + reprocessed - ejected;
+				float re_uptake_and_lost =
+				    (synapse_params.rdt + synapse_params.ldt) * an_cleft[j];
+				float re_uptake = synapse_params.rdt * an_cleft[j];
+				an_cleft[j] = an_cleft[j] + ejected - re_uptake_and_lost;
+   		        an_repro[j] = an_repro[j] + re_uptake - reprocessed;
+
+				//=======write output value to buffer to go to SDRAM ========//
+	            if (spikes && recording_is_channel_enabled(
+	                    recording_flags, SPIKE_RECORDING_REGION_ID)) {
+                    bit_field_set(
+                        out_buffer_spikes, (j * parameters.seg_size) + i);
+                }
+				if (recording_is_channel_enabled(
+	                    recording_flags, SPIKE_PROBABILITY_REGION_ID)) {
+                    out_buffer_spike_prob[
+                        (j * parameters.seg_size) + i] = ca_curr_pow;
+                }
+			}
+		}
+	}
+}
+
+//! \brief interface for when dma transfer is successful
+//! \param[in] tid:  forced by api
+//! \param[in] ttag:  forced by api
+//! \return None
+void transfer_handler(uint tid, uint ttag) {
+    use(tid);
+    use(ttag);
+
+    //increment segment index
+    seg_index ++;
+
+    //choose current available buffers
+    if (!read_switch) {
+        process_chan(dtcm_buffer_b);
+    } else {
+        process_chan(dtcm_buffer_a);
+    }
+
+    //triggers a write to recording region callback
+    spin1_trigger_user_event(IHCAN_FILLER_ARG, IHCAN_FILLER_ARG);
+}
+
+//! \brief timer control
+//! \param[in] null_a:  forced by api
+//! \param[in] null_b:  forced by api
+//! \return None
+void count_ticks(uint null_a, uint null_b) {
+    use(null_a);
+    use(null_b);
+
+    time++;
+    // If a fixed number of simulation ticks are specified and these have passed
+    if (infinite_run != TRUE && time >= simulation_ticks) {
+
+        // handle the pause and resume functionality
+        simulation_handle_pause_resume(NULL);
+
+         // Subtract 1 from the time so this tick gets done again on the next
+        // run
+        time -= 1;
+
+        simulation_ready_to_read();
+        return;
+    }
+}
+
+void _store_provenance_data(address_t provenance_region){
+    log_debug("writing other provenance data");
+
+    // store the data into the provenance data region
+    provenance_region[N_SIMULATION_TICKS] = simulation_ticks;
+    provenance_region[SEG_INDEX] = seg_index;
+    provenance_region[DATA_READ_COUNT] = data_read_count;
+    provenance_region[DATA_WRITE_COUNT_SPIKES] = data_write_count_spikes;
+    provenance_region[DATA_WRITE_COUNT_SPIKE_PROB] =
+        data_write_count_spikes_prob;
+    provenance_region[MC_RX_COUNT] = mc_rx_count;
+    provenance_region[MC_TRANSMISSION_COUNT] = spike_count;
+
+    log_debug("finished other provenance data");
+}
+
 
 //! \brief Initialises the recording parts of the model
 //! \return True if recording initialisation is successful, false otherwise
@@ -227,598 +516,279 @@ static bool initialise_recording(){
     log_info("Recording flags = 0x%08x", recording_flags);
     return success;
 }
+
 //application initialisation
+//! \param[in] timer_period: the pointer for the timer period
+//! \return bool stating if the init was successful
 bool app_init(uint32_t *timer_period)
 {
-	seg_index=0;
-	shift_index=0;
-	cbuff_numseg=4;
-	read_switch=0;
-	write_switch=0;
-	r_max_recip=REAL_CONST(1.)/(REAL)RDM_MAX;
+	log_info("starting init \n");
 
-	io_printf (IO_BUF, "[core %d] -----------------------\n", coreID);
-	io_printf (IO_BUF, "[core %d] starting simulation\n", coreID);
 	//obtain data spec
 	address_t data_address = data_specification_get_data_address();
 	// Get the timing details and set up the simulation interface
     if (!simulation_initialise(
             data_specification_get_region(SYSTEM, data_address),
             APPLICATION_NAME_HASH, timer_period, &simulation_ticks,
-            NULL, 1, 0)) {
+            &infinite_run, SDP_PRIORITY, DMA)) {
         return false;
     }
-    //get parameters
-    address_t params = data_specification_get_region(
-                                        PARAMS,data_address);
 
-    is_recording = params[IS_RECORDING];
-    log_info("is_recording=%d",is_recording);//not used so always will record
-    if (!initialise_recording()) return false;
+    // sort out provenance data
+    simulation_set_provenance_function(
+        _store_provenance_data,
+        data_specification_get_region(PROVENANCE, data_address));
 
-    // Get the size of the data in words
-    data_size = params[DATA_SIZE];
-    //get the core ID of the parent DRNL
-    drnl_coreID = params[DRNLCOREID];
-    placement_coreID = params[COREID];//not used
-    drnl_appID = params[DRNLAPPID];//not used
-    //parent DRNL data key
-    drnl_key = params[DRNL_KEY];
-    //comms protocol mask to obtain commands from received key
-    mask = 3;
-    //factor to perform vesicle model resampling by
-    resamp_fac = params[RESAMPLE];
-    sampling_freq = params[FS];
-    an_key = params[AN_KEY];
-    NUMLSR = params[N_LSR];
-    NUMMSR = params[N_MSR];
-    NUMHSR = params[N_HSR];
+    // set up recording
+     if (!initialise_recording()){
+        log_error("Failed to initialise recording");
+        return false;
+    }
 
-    //RNG seeds
-    seeds = &params[SEED];
-    log_info("parent DRNL key=%d",drnl_key);
-    log_info("data_size=%d",data_size);
-    log_info("mask=%d",mask);
-    log_info("DRNL ID=%d",drnl_coreID);
-    log_info("AN key=%d",an_key);
-    log_info("n_lsr=%d",NUMLSR);
-    log_info("n_msr=%d",NUMMSR);
-    log_info("n_hsr=%d",NUMHSR);
+    // get parameters region
+    spin1_memcpy(
+        &parameters, data_specification_get_region(PARAMS, data_address),
+        sizeof(parameters_struct));
+
+    // get cilia params
+    spin1_memcpy(
+        &cilia_params,
+        data_specification_get_region(CILIA_PARAMS, data_address),
+        sizeof(cilia_constants_struct));
+
+    // get inner ear params
+    spin1_memcpy(
+        &inner_ear_params,
+        data_specification_get_region(INNER_EAR_PARAMS, data_address),
+        sizeof(inner_ear_param_struct));
+
+    // set the current ihcv to the start point
+    ihcv_now = inner_ear_params.ihcv;
+    m_ica_curr = inner_ear_params.m_ica_curr;
+
+    // factor to perform vesicle model resampling by
+    log_info("AN key=%d", parameters.my_key);
+    log_info("n_lsr=%d", parameters.num_lsr);
+    log_info("n_msr=%d", parameters.num_msr);
+    log_info("n_hsr=%d", parameters.num_hsr);
 
     #ifdef PROFILE
-    // configure timer 2 for profiling
-    profiler_init(
-    data_specification_get_region(PROFILER, data_address));
+        // configure timer 2 for profiling
+        profiler_init(
+        data_specification_get_region(PROFILER, data_address));
     #endif
 
-    Fs=(REAL)sampling_freq;
-	dt=(1.0/Fs);
-	seg_output = NUMFIBRES * SEGSIZE;
-	#ifdef BITFIELD
-    seg_output /= 8;
-    if (seg_output==0)seg_output=1;
-    seg_output_n_bytes=seg_output * sizeof(uint32_t);
-	#endif
-	#ifndef BITFIELD
-	seg_output_n_bytes=seg_output * sizeof(REAL);
-	#endif
-    log_info("seg output (in bytes)=%d\n",seg_output_n_bytes);
-    spike_seg_size = seg_output/NUMFIBRES;
+    // deduce output recording size in bytes
+	int seg_output_atoms = parameters.number_fibres * parameters.seg_size;
+	seg_output_n_words_spikes = get_bit_field_size(seg_output_atoms);
+    seg_output_n_bytes_spikes = (
+        seg_output_n_words_spikes * WORD_TO_BYTE_CONVERSION);
+	seg_output_n_bytes_spikes_prob = seg_output_atoms * sizeof(float);
 
-	max_rate=Fs/(REAL)resamp_fac;
-	dt_spikes=(REAL)resamp_fac*dt;
-	dt_segment = dt*SEGSIZE;
+    // printer
+    log_info(
+        "seg output for spikes (in bytes)=%d\n", seg_output_n_bytes_spikes);
+    log_info(
+        "seg output for spikes prob (in bytes)=%d\n",
+        seg_output_n_bytes_spikes_prob);
 
-	//Alocate buffers in DTCM
-	//input buffers
-	dtcm_buffer_a = (double *) sark_alloc (SEGSIZE, sizeof(double));
-	dtcm_buffer_b = (double *) sark_alloc (SEGSIZE, sizeof(double));
-    //output buffers
-	#ifdef BITFIELD
-    dtcm_buffer_x = (uint32_t *) sark_alloc (seg_output, sizeof(uint32_t));
-	dtcm_buffer_y = (uint32_t *) sark_alloc (seg_output, sizeof(uint32_t));
-	#endif
-	#ifndef BITFIELD
-	dtcm_buffer_x = (REAL *) sark_alloc (seg_output, sizeof(REAL));
-	dtcm_buffer_y = (REAL *) sark_alloc (seg_output, sizeof(REAL));
-	#endif
+	//********  Allocate buffers in DTCM **********//
 
-	if (dtcm_buffer_a == NULL ||dtcm_buffer_b == NULL ||
-	    dtcm_buffer_x == NULL ||dtcm_buffer_y == NULL)
-	{
-		test_DMA = FALSE;
-		io_printf (IO_BUF, "[core %d] error - cannot allocate buffer\n"
-		           ,coreID);
-	}
-	else
-	{
-		test_DMA = TRUE;
-		// initialize sections of DTCM
-		for (uint i = 0; i < SEGSIZE; i++)
-		{
-			dtcm_buffer_a[i]   = 0;
-			dtcm_buffer_b[i]   = 0;
-		}
-		for (uint i = 0; i < seg_output; i++)
-		{
-			dtcm_buffer_x[i]   = 0;
-			dtcm_buffer_y[i]   = 0;
-		}
+	// input buffers
+	dtcm_buffer_a = (double *) sark_alloc (
+	    parameters.seg_size, sizeof(double));
+	dtcm_buffer_b = (double *) sark_alloc (
+	    parameters.seg_size, sizeof(double));
 
-		io_printf (IO_BUF, "[core %d] dtcm buffer a @ 0x%08x\n", coreID,
-				   (uint) dtcm_buffer_a);
-	}
-
-    while (sdramin_buffer==NULL)//if first time in this callback setup input buffer
-    {
-        //obtain pointer to shared SDRAM circular buffer with parent DRNL
-        spin1_delay_us(1000);
-        sdramin_buffer = (double *) sark_tag_ptr (drnl_coreID, 0);
-        //TODO: implement a time out here
+    //output buffers (for both recording types)
+	if (recording_is_channel_enabled(
+	        recording_flags, SPIKE_RECORDING_REGION_ID)) {
+        dtcm_buffer_x_spikes = bit_field_alloc(seg_output_atoms);
+        dtcm_buffer_y_spikes = bit_field_alloc(seg_output_atoms);
     }
-    io_printf(IO_BUF,"[core %d] sdram in buffer @ 0x%08x\n", coreID,
-                   (uint) sdramin_buffer);
 
-	//============MODEL INITIALISATION================//
-	//calculate startup values
-	startupValues=generateStartupVars();
-    //initialise random number generator
-	io_printf (IO_BUF, "[core %d][chip %d] local_seeds=",coreID,chipID);
-	for(uint i=0;i<4;i++)
-	{
-        local_seed[i] = seeds[i];
-		io_printf (IO_BUF, "%u ",local_seed[i]);
+    if (recording_is_channel_enabled(
+	        recording_flags, SPIKE_PROBABILITY_REGION_ID)) {
+         dtcm_buffer_x_spikes_prob = (float *) sark_alloc (
+            seg_output_atoms, sizeof(float));
+         dtcm_buffer_y_spikes_prob = (float *) sark_alloc (
+            seg_output_atoms, sizeof(float));
+    }
+
+    // verify buffers were actually initialised
+	if (dtcm_buffer_a == NULL || dtcm_buffer_b == NULL ||
+	        dtcm_buffer_x_spikes == NULL || dtcm_buffer_y_spikes == NULL ||
+	        dtcm_buffer_x_spikes_prob == NULL ||
+	        dtcm_buffer_y_spikes_prob == NULL) {
+		log_error("error - cannot allocate buffers");
+		return false;
 	}
-	io_printf (IO_BUF,"\n");
 
-	//initialise random number gen
-	validate_mars_kiss64_seed (local_seed);
+    // ********** initialize sections of DTCM **************/
+
+    // input buffers
+    for (int i = 0; i < parameters.seg_size; i++) {
+        dtcm_buffer_a[i] = 0.0;
+        dtcm_buffer_b[i] = 0.0;
+    }
+
+    // spikes output buffers
+    if (recording_is_channel_enabled(
+	        recording_flags, SPIKE_RECORDING_REGION_ID)) {
+        clear_bit_field(dtcm_buffer_x_spikes, seg_output_n_words_spikes);
+        clear_bit_field(dtcm_buffer_y_spikes, seg_output_n_words_spikes);
+    }
+
+    // spikes prob output buffers
+    if (recording_is_channel_enabled(
+	        recording_flags, SPIKE_PROBABILITY_REGION_ID)) {
+        for (uint i = 0; i < seg_output; i++) {
+            dtcm_buffer_x_spikes_prob[i] = 0.0;
+            dtcm_buffer_y_spikes_prob[i] = 0.0;
+        }
+    }
+
+    log_debug("dtcm buffer a @ 0x%08x\n", (uint) dtcm_buffer_a);
+    log_debug("dtcm buffer b @ 0x%08x\n", (uint) dtcm_buffer_b);
+    if (recording_is_channel_enabled(
+	        recording_flags, SPIKE_RECORDING_REGION_ID)) {
+        log_debug(
+            "dtcm buffer spikes x @ 0x%08x\n", (uint) dtcm_buffer_x_spikes);
+        log_debug(
+            "dtcm buffer spikes y @ 0x%08x\n", (uint) dtcm_buffer_y_spikes);
+    }
+    if (recording_is_channel_enabled(
+	        recording_flags, SPIKE_PROBABILITY_REGION_ID)) {
+        log_debug(
+            "dtcm buffer spikes prob x @ 0x%08x\n",
+             (uint) dtcm_buffer_x_spikes_prob);
+        log_debug(
+            "dtcm buffer spikes prob y @ 0x%08x\n",
+            (uint) dtcm_buffer_y_spikes_prob);
+    }
+
+    //******************** array defs off num fibres **************//
+    refact = spin1_malloc(parameters.number_fibres * sizeof(uint));
+    ca_curr = spin1_malloc(parameters.number_fibres * sizeof(float));
+    an_cleft = spin1_malloc(parameters.number_fibres * sizeof(float));
+    an_avail = spin1_malloc(parameters.number_fibres * sizeof(float));
+    an_repro = spin1_malloc(parameters.number_fibres * sizeof(float));
+    rec_tau_ca = spin1_malloc(parameters.number_fibres * sizeof(float));
+    g_max_ca = spin1_malloc(parameters.number_fibres * sizeof(float));
+    ca_th = spin1_malloc(parameters.number_fibres * sizeof(float));
+
+
+    // initialise synapse_params_struct
+    synapse_params.m = spin1_malloc(parameters.number_fibres * sizeof(float));
+
+    // verify buffers were actually initialised
+	if (refact == NULL || ca_curr == NULL || an_cleft == NULL ||
+	        an_avail == NULL || an_repro == NULL || ca_th == NULL ||
+	        synapse_params.m == NULL || rec_tau_ca == NULL ||
+	        g_max_ca == NULL) {
+		log_error("cannot allocate params based off number of fibres\n");
+		return false;
+	}
+
+    //*********************** sdram edge data ******************//
+    sdram_out_buffer_param sdram_params;
+    spin1_memcpy(
+        &sdram_params,
+        data_specification_get_region(SDRAM_EDGE_ADDRESS, data_address),
+        sizeof(sdram_out_buffer_param));
+	sdram_in_buffer = sdram_params.sdram_base_address;
+    log_info("sdram in buffer @ 0x%08x\n", (uint) sdram_in_buffer);
+
+	//****************MODEL INITIALISATION******************//
+
+    //initialise random number generator
+	spin1_memcpy(
+        &local_seed,
+        data_specification_get_region(RANDOM_SEEDS, data_address),
+        sizeof(mars_kiss64_seed_t));
 
 	//initialise cilia
-	Cilia.tc= 0.00012;
-	Cilia.filter_b1= 1.0;
-	Cilia.filter_b2= (double)dt/Cilia.tc - 1.0;
-	Cilia.filter_a1= (double)dt/Cilia.tc;
-	Cilia.C=REAL_CONST(0.3);
-	Cilia.u0=REAL_CONST(0.3e-9);
-	Cilia.recips0=REAL_CONST(1.)/REAL_CONST(6e-9);
-	Cilia.u1=REAL_CONST(1e-9);
-	Cilia.recips1=REAL_CONST(1.)/REAL_CONST(1e-9);
-	Cilia.Gmax=REAL_CONST(6e-9);
-	Cilia.Ga=REAL_CONST(0.1e-9);
-	Cilia.dtCap=(dt/5e-12);
-	Cilia.Et=REAL_CONST(0.1);
-	Cilia.Gk=REAL_CONST(2.1e-8);
-	Cilia.Ek=REAL_CONST(-0.08);
-	Cilia.Rpc=REAL_CONST(0.04);
+	cilia_filter_b2 = (double) parameters.dt / CILIA_TC - 1.0;
+	cilia_filter_a1 = (double) parameters.dt / CILIA_TC;
+	cilia_dt_cap = parameters.dt / RANDOM_1;
 
 	//==========Recurring Values=================//
-	past_ciliaDisp=0.0;
-	IHCVnow=startupValues.IHCVnow0;
-	mICaCurr=startupValues.mICaCurr0;;
-	for(uint i=0;i<NUMLSR;i++)
-	{
-		CaCurr[i]=startupValues.CaCurrLSR0;
-		ANCleft[i]=startupValues.ANCleftLSR0;
-		ANAvail[i]=startupValues.ANAvailLSR0;
-		ANRepro[i]=startupValues.ANReproLSR0;
-		refrac[i]=0;
-		preSyn.GmaxCa[i]=20e-9;
-		preSyn.recTauCa[i]=1./200e-6;
-		Synapse.M[i]=REAL_CONST(4.);
+	for (int i=0; i < parameters.num_lsr; i++) {
+		ca_curr[i] = inner_ear_params.ca_curr_lsr;
+		an_cleft[i] = inner_ear_params.an_cleft_lsr;
+		an_avail[i] = inner_ear_params.an_avail_lsr;
+		an_repro[i] = inner_ear_params.an_repro_lsr;
+		refrac[i] = 0;
+		g_max_ca[i] = RANDOM_2;
+		rec_tau_ca[i] = RANDOM_6;
+		synapse_params.m[i] = RANDOM_4;
 	}
-	for(uint i=0;i<NUMMSR;i++)
-	{
-		CaCurr[i+NUMLSR]=startupValues.CaCurrMSR0;
-		ANCleft[i+NUMLSR]=startupValues.ANCleftMSR0;
-		ANAvail[i+NUMLSR]=startupValues.ANAvailMSR0;
-		ANRepro[i+NUMLSR]=startupValues.ANReproMSR0;
-		refrac[i+NUMLSR]=0;
-		preSyn.GmaxCa[i+NUMLSR]=20e-9;
-		preSyn.recTauCa[i+NUMLSR]=1./350e-6;
-		Synapse.M[i+NUMLSR]=REAL_CONST(4.);
+
+	for (int i = 0; i < parameters.num_msr; i++) {
+		ca_curr[i + parameters.num_lsr] = inner_ear_params.ca_curr_msr;
+		an_cleft[i + parameters.num_lsr] = inner_ear_params.an_cleft_msr;
+		an_avail[i + parameters.num_lsr] = inner_ear_params.an_avail_msr;
+		an_repro[i + parameters.num_lsr] = inner_ear_params.an_repro_msr;
+		refrac[i + parameters.num_lsr] = 0;
+		g_max_ca[i + parameters.num_lsr] = RANDOM_2;
+		rec_tau_ca[i + parameters.num_lsr] = RANDOM_5;
+		synapse_params.m[i + parameters.num_lsr] = RANDOM_4;
 	}
-	for(uint i=0;i<NUMHSR;i++)
-	{
-		CaCurr[i+NUMLSR+NUMMSR]=startupValues.CaCurrHSR0;
-		ANCleft[i+NUMLSR+NUMMSR]=startupValues.ANCleftHSR0;
-		ANAvail[i+NUMLSR+NUMMSR]=startupValues.ANAvailHSR0;
-		ANRepro[i+NUMLSR+NUMMSR]=startupValues.ANReproHSR0;
-		refrac[i+NUMLSR+NUMMSR]=0;
-		preSyn.GmaxCa[i+NUMLSR+NUMMSR]=20e-9;
-		preSyn.recTauCa[i+NUMLSR+NUMMSR]=1./500e-6;
-		Synapse.M[i+NUMLSR+NUMMSR]=REAL_CONST(4.);
+
+	for (int i = 0; i < parameters.num_hsr; i++) {
+		ca_curr[i + parameters.num_lsr + parameters.num_msr] =
+		    inner_ear_params.ca_curr_hsr;
+		an_cleft[i + parameters.num_lsr + parameters.num_msr] =
+		    inner_ear_params.an_cleft_hsr;
+		an_avail[i + parameters.num_lsr + parameters.num_msr] =
+		    inner_ear_params.an_avail_hsr;
+		an_repro[i + parameters.num_lsr + parameters.num_msr] =
+		    inner_ear_params.an_repro_hsr;
+		refrac[i + parameters.num_lsr + parameters.num_msr] = 0;
+		g_max_ca[i + parameters.num_lsr + parameters.num_msr] = RANDOM_2;
+		rec_tau_ca[i + parameters.num_lsr + parameters.num_msr] = RANDOM_3;
+		synapse_params.m[
+		    i + parameters.num_lsr + parameters.num_msr] = RANDOM_4;
 	}
 
 	//=========initialise the pre synapse params========//
-	preSyn.recipBeta=(1./400.0);
-	preSyn.gamma=REAL_CONST(100.);
-	preSyn.dtTauM=(dt/5e-5);
-	preSyn.Eca=0.066;
-	preSyn.power=REAL_CONST(3.);
-	preSyn.z=40e12;
+	dt_tau_m = parameters.dt / RANDOM_7;
 
 	//=======initialise the synapse params=======//
-	Synapse.ldt=REAL_CONST(150.)*dt_spikes;
-	Synapse.ydt=REAL_CONST(15.)*dt_spikes;
-	if(Synapse.ydt>REAL_CONST(1.))
-	{
-		Synapse.ydt=REAL_CONST(1.);
+	dt_spikes = (float) parameters.resampling_factor * parameters.dt;
+	synapse_params.ldt = RANDOM_8 * dt_spikes;
+	synapse_params.ydt = RANDOM_9 * dt_spikes;
+	if (synapse_params.ydt > 1.0f) {
+		synapse_params.ydt = 1.0f;
 	}
-	Synapse.xdt=REAL_CONST(300.)*dt_spikes;
-	Synapse.rdt=REAL_CONST(300.)*dt_spikes;
-	Synapse.refrac_period=((7.5e-4)/dt_spikes);
-
+	synapse_params.xdt = RANDOM_10 * dt_spikes;
+	synapse_params.rdt = RANDOM_10 * dt_spikes;
+	synapse_params.refrac_period = (RANDOM_11 / dt_spikes);
     return true;
 }
 
-
-void app_done()
-{
-    // report simulation time
-    io_printf (IO_BUF, "[core %d] simulation produced %d spikes\n",
-                coreID,spike_count);
-    //copy profile data
-    #ifdef PROFILE
-        profiler_finalise();
-    #endif
-    // say goodbye
-    io_printf (IO_BUF, "[core %d] stopping simulation\n", coreID);
-    io_printf (IO_BUF, "[core %d] -------------------\n", coreID);
-}
-
-void app_end(uint null_a,uint null_b)
-{
-    recording_finalise();
-    log_info("total simulation ticks = %d",
-        simulation_ticks);
-    io_printf (IO_BUF, "spinn_exit seg_index:%d data_read:%d data_write:%d mc_rx_count:%d\n",seg_index,
-                data_read_count,data_write_count,mc_rx_count);
-    app_done();
-    app_complete=true;
-    simulation_ready_to_read();
-}
-
-recording_complete_callback_t record_finished(void)
-{
-    #ifdef PROFILE
-      profiler_write_entry_disable_irq_fiq(PROFILER_EXIT |
-                                            PROFILER_TIMER);
-    #endif
-    data_write_count++;
-    //flip write buffers
-    write_switch=!write_switch;
-}
-
-void data_write(uint null_a, uint null_b)
-{
-    #ifdef BITFIELD
-//	uint8_t *dtcm_buffer_out;
-	uint32_t *dtcm_buffer_out;
-	#endif
-	#ifndef BITFIELD
-	REAL *dtcm_buffer_out;
-	#endif
-	uint out_index;
-	if(test_DMA == TRUE)
-	{
-	    //Select available buffer
-		if(!write_switch)
-		{
-			out_index=index_x;
-			dtcm_buffer_out=dtcm_buffer_x;
-		}
-		else
-		{
-			out_index=index_y;
-			dtcm_buffer_out=dtcm_buffer_y;
-		}
-
-        recording_record_and_notify(0, dtcm_buffer_out,
-                            seg_output_n_bytes,record_finished);
-
-	}
-}
-
-//DMA read
-void data_read(uint mc_key, uint payload)
-{
-    mc_rx_count++;
-    if(mc_key==drnl_key)
-    {
-        //measure time between each call of this function (should approximate the global clock in OME)
-        #ifdef PROFILE
-	     profiler_write_entry_disable_irq_fiq(PROFILER_ENTER |
-	                                            PROFILER_TIMER);
-		#endif
-        double *dtcm_buffer_in;
-        //read from DMA and copy into DTCM
-        if(test_DMA == TRUE)
-        {
-            //assign recieve buffer
-            if(!read_switch)
-            {
-                dtcm_buffer_in=dtcm_buffer_a;
-                read_switch=1;
-            }
-            else
-            {
-                dtcm_buffer_in=dtcm_buffer_b;
-                read_switch=0;
-            }
-            spin1_dma_transfer(DMA_READ,&sdramin_buffer[(seg_index & (cbuff_numseg-1))*SEGSIZE],
-                            dtcm_buffer_in, DMA_READ,SEGSIZE*sizeof(double));
-            data_read_count++;
-
-        }
-	}
-	else{
-	    log_info("unexpected mc packet received 0x%x",mc_key);
-        //rt_error(RTE_SWERR);
-	}
-}
-////---------Main segment processing loop-----////
-//select correct output buffer type
-#ifdef BITFIELD
-uint process_chan(uint32_t *out_buffer,double *in_buffer)
-#endif
-#ifndef BITFIELD
-uint process_chan(REAL *out_buffer,double *in_buffer)
-#endif
-{
-    #ifdef BITFIELD
-	uint segment_offset=seg_output*(seg_index-1);
-	#endif
-	#ifndef BITFIELD
-	uint segment_offset=NUMFIBRES*spike_seg_size*(seg_index-1);
-	#endif
-	uint i,j,k;
-
-	REAL term_1;
-	REAL term_2;
-	REAL term_3;
-	double cilia_disp;
-	REAL utconv;
-	REAL ex1;
-	REAL ex2;
-	REAL ex3;
-	REAL Guconv;
-	REAL mICaINF;
-	REAL micapowconv;
-	REAL ICa;
-	REAL sub1;
-	REAL sub2;
-	REAL pos_CaCurr;
-	REAL CaCurr_pow;
-	REAL releaseProb_pow;
-	REAL Repro_rate;
-	REAL Synapse_ypow;
-	REAL Synapse_xpow;
-	REAL compare;
-	REAL vrr;
-	REAL releaseProb;
-	REAL M_q;
-	REAL Probability;
-	REAL ejected;
-	uint spikes;
-	REAL reprocessed;
-	REAL replenish;
-	REAL reuptakeandlost;
-	REAL reuptake;
-	double filter_1;
-
-	uint si=0;
-	uint spike_index=0;
-	uint spike_shift=0;
-
-    #ifdef BITFIELD
-    //clear output buffer values (needed for bitfield writing)
-    for (uint i = 0; i < seg_output; i++)
-    {
-        out_buffer[i]   = 0;
-    }
-    #endif
-
-	for(i=0;i<SEGSIZE;i++)
-	{
-	    //==========Cilia filter===============//
-        filter_1 = Cilia.filter_b1 * in_buffer[i] + Cilia.filter_b2
-                    * past_ciliaDisp;
-        cilia_disp = filter_1 - Cilia.filter_a1 * past_ciliaDisp;
-		past_ciliaDisp=cilia_disp * Cilia.C;
-		//===========Apply Scaler============//
-  	  	utconv=past_ciliaDisp;
-		//=========Apical Conductance========//
-		ex1=expk((accum)(-(utconv-Cilia.u1)*Cilia.recips1));
-		ex2=expk((accum)(-(utconv-Cilia.u0)*Cilia.recips0));
-  	  	Guconv=Cilia.Ga + (Cilia.Gmax/(REAL_CONST(1.)+
-  	  	        (REAL)ex2*(REAL_CONST(1.)+(REAL)ex1)));
-		//========Receptor Potential=========//
-		IHCVnow+=((-Guconv*(IHCVnow-Cilia.Et))-
-		         (Cilia.Gk*(IHCVnow-startupValues.Ekp)))*
-		           Cilia.dtCap;
-		//================mICa===============//
-		ex3=expk((accum)-preSyn.gamma*IHCVnow);
-		mICaINF=REAL_CONST(1.)/(REAL_CONST(1.)+(REAL)ex3*
-		        preSyn.recipBeta);
-		mICaCurr+=(mICaINF-mICaCurr)*preSyn.dtTauM;
-		//================ICa================//
-		micapowconv=mICaCurr;
-		for(k=0;k<preSyn.power-1;k++)
-		{
-			micapowconv=micapowconv*mICaCurr;
-		}
-		//============Fibres=============//
-		for (j=0;j<NUMFIBRES;j++)
-		{
-			//======Synaptic Ca========//
-			ICa=preSyn.GmaxCa[j]*micapowconv*(IHCVnow-
-			                                preSyn.Eca);
-			sub1 = ICa*dt;
-			sub2 = (CaCurr[j]*dt)*preSyn.recTauCa[j];
-			CaCurr[j] += sub1 - sub2;
-			//invert Ca
-			pos_CaCurr=REAL_CONST(-1.)*CaCurr[j];
-			if(i%resamp_fac==0)
-			{
-				//=====Vesicle Release Rate MAP_BS=====//
-				CaCurr_pow=pos_CaCurr*preSyn.z;
-				for(k=0;k<(uint)preSyn.power-1;k++)
-				{
-					CaCurr_pow=CaCurr_pow*pos_CaCurr*preSyn.z;
-				}
-				vrr = CaCurr_pow;
-				//=====Release Probability=======//
-				releaseProb=vrr*dt_spikes;
-				M_q=Synapse.M[j]-ANAvail[j];
-				if(M_q<REAL_CONST(0.))
-				{
-					M_q=REAL_CONST(0.);
-				}
-				//===========Ejected============//
-				releaseProb_pow=REAL_CONST(1.);
-				for(k=0;k<(uint)ANAvail[j];k++)
-				{
-					releaseProb_pow=releaseProb_pow*
-					                (REAL_CONST(1.)-releaseProb);
-				}
-				Probability=REAL_CONST(1.)-releaseProb_pow;
-				if (refrac[j]>0)
-				{
-					refrac[j]--;
-				}
-				if(Probability>((REAL)random_gen()*r_max_recip))
-				{
-					ejected=REAL_CONST(1.);
-					if (refrac[j]<=0)
-					{
-						spikes = 1;
-                        spin1_send_mc_packet(an_key|j,0,NO_PAYLOAD);
-
-						refrac[j]=(uint)(Synapse.refrac_period +
-						           (((REAL)random_gen()*r_max_recip)*
-						            Synapse.refrac_period)+REAL_CONST(0.5));
-					}
-					else
-					{
-						spikes=0;
-					}
-				}
-				else
-				{
-					ejected=REAL_CONST(0.);
-					spikes=0;
-				}
-
-				//=========Reprocessed=========//
-				Repro_rate=Synapse.xdt;
-				Synapse_xpow=REAL_CONST(1.);
-				Synapse_ypow=REAL_CONST(1.);
-				for(k=0;k<(uint)M_q;k++)
-				{
-					Synapse_ypow=Synapse_ypow*(REAL_CONST(1.)-Synapse.ydt);
-				}
-				for(k=0;k<(uint)ANRepro[j];k++)
-				{
-					Synapse_xpow=Synapse_xpow*(REAL_CONST(1.)-Repro_rate);
-				}
-				Probability=REAL_CONST(1.)-Synapse_xpow;
-				if(Probability>((REAL)random_gen()*r_max_recip))
-				{
-					reprocessed=REAL_CONST(1.);
-				}
-				else
-				{
-					reprocessed=REAL_CONST(0.);
-				}
-				//========Replenish==========//
-				Probability=REAL_CONST(1.)-Synapse_ypow;
-				if(Probability>((REAL)random_gen()*r_max_recip))
-				{
-					replenish=REAL_CONST(1.);
-				}
-				else
-				{
-					replenish=REAL_CONST(0.);
-				}
-				//==========Update Variables=========//
-				ANAvail[j]=ANAvail[j]+replenish+reprocessed-ejected;
-				reuptakeandlost=(Synapse.rdt+Synapse.ldt)*ANCleft[j];
-				reuptake=Synapse.rdt*ANCleft[j];
-				ANCleft[j]= ANCleft[j]+ejected-reuptakeandlost;
-   		        ANRepro[j]=ANRepro[j]+ reuptake-reprocessed;
-				//=======write output value to SDRAM========//
-				#ifdef BITFIELD
-				spike_shift = (SEGSIZE-1)-i;//only using SEGSIZE LSBs of 32bit word
-                if(spikes)
-                {
-                    spike_count++;
-                    out_buffer[j]|=(spikes<<spike_shift);
-                }
-                #endif
-                #ifndef BITFIELD
-                out_buffer[(j*spike_seg_size)+i] =vrr;
-                #endif
-			}
-		}
-	}
-	return segment_offset;
-}
-
-void transfer_handler(uint tid, uint ttag)
-{
-    //increment segment index
-    seg_index++;
-    //choose current available buffers
-    if(!read_switch && !write_switch)
-    {
-        index_x=process_chan(dtcm_buffer_x,dtcm_buffer_b);
-    }
-    else if(!read_switch && write_switch)
-    {
-        index_y=process_chan(dtcm_buffer_y,dtcm_buffer_b);
-    }
-    else if(read_switch && !write_switch)
-    {
-        index_x=process_chan(dtcm_buffer_x,dtcm_buffer_a);
-    }
-    else
-    {
-        index_y=process_chan(dtcm_buffer_y,dtcm_buffer_a);
-    }
-
-    //triggers a write to recording region callback
-    spin1_trigger_user_event(NULL,NULL);
-}
-
-void count_ticks(uint null_a, uint null_b){
-
-    time++;
-    if (time>simulation_ticks && !app_complete)spin1_schedule_callback(app_end,NULL,NULL,2);
-}
-
+//! \brief c main
 void c_main()
 {
     // Get core and chip IDs
-    coreID = spin1_get_core_id ();
-    chipID = spin1_get_chip_id ();
     uint32_t timer_period;
     // Start the time at "-1" so that the first tick will be 0
     time = UINT32_MAX;
 
-    if(app_init(&timer_period))
-    {
+    if (app_init(&timer_period)) {
         // Set timer tick (in microseconds)
         log_info("setting timer tick callback for %d microseconds",
         timer_period);
         spin1_set_timer_tick(timer_period);
+
         //setup callbacks
         //process channel once data input has been read to DTCM
-        simulation_dma_transfer_done_callback_on(DMA_READ,transfer_handler);
+        simulation_dma_transfer_done_callback_on(DMA_READ, transfer_handler);
+
         //reads from DMA to DTCM every MC packet received
-        spin1_callback_on (MC_PACKET_RECEIVED,data_read,-1);
-        spin1_callback_on (USER_EVENT,data_write,0);
-        spin1_callback_on (TIMER_TICK,count_ticks,0);
+        spin1_callback_on (MC_PACKET_RECEIVED, data_read, MC_PACKET_PRIORITY);
+        spin1_callback_on (USER_EVENT, data_write, USER);
+        spin1_callback_on (TIMER_TICK, count_ticks, TIMER);
 
         simulation_run();
     }
