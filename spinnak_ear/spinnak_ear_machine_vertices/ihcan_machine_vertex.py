@@ -2,7 +2,7 @@ from pacman.model.graphs.common import EdgeTrafficType
 from pacman.model.graphs.machine import MachineVertex
 from pacman.model.resources.resource_container import ResourceContainer
 from pacman.model.resources.dtcm_resource import DTCMResource
-from pacman.model.resources import ConstantSDRAM, VariableSDRAM
+from pacman.model.resources import VariableSDRAM
 from pacman.model.resources.cpu_cycles_per_tick_resource \
     import CPUCyclesPerTickResource
 from pacman.model.decorators.overrides import overrides
@@ -45,38 +45,55 @@ class IHCANMachineVertex(
         AbstractProvidesNKeysForPartition,
         AbstractReceiveBuffersToHost,
         AbstractEarProfiled, ProvidesProvenanceDataFromMachineImpl):
-    """ A vertex that runs the DRNL algorithm
+    """ A vertex that runs the IHCAN algorithm
     """
 
     __slots__ = [
         # bool flag for recording spikes
         "_is_recording_spikes",
+
         # bool flag for recording spike probability
         "_is_recording_spike_prob",
+
         # which ear (left or right)
         "_ear_index",
+
         # ????
         "_re_sample_factor",
-        # samply freq
+
+        # sample freq
         "_fs",
+
+        # ?????????
+        "_dt",
+
         # n atoms in this vertex (inner hair cells?)
         "_n_atoms",
+
         # n low freq hair cells in here
         "_n_lsr",
+
         # n medium freq hair cells in here
         "_n_msr",
+
         # n high freq hair cells in here
         "_n_hsr",
+
         # the seg size
         "_seg_size",
+
         # data points.....
         "_num_data_points",
+
         # recording size
         "_recording_spikes_size",
-        # recording probabily of spiking
+
+        # recording probability of spiking
         "_recording_spike_probability_size",
+
         # seed for random
         "_seed",
+
         # the number of distinct buffers in the sdram
         "_n_buffers_in_sdram_total"
     ]
@@ -96,8 +113,8 @@ class IHCANMachineVertex(
 
     # other constants
     # ???????????????
-    GU0 = (1e-10 + 6e-9 / (1 + math.exp(0.3e-9 / 6e-9) *
-                           (1 + math.exp(1e-9 / 1e-9))))
+    GU0 = (1e-10 + 6e-9 / (
+        1 + math.exp(0.3e-9 / 6e-9) * (1 + math.exp(1e-9 / 1e-9))))
     # ???????????????
     EKP = (-0.08 + 0.04 * 0.1)
 
@@ -209,10 +226,10 @@ class IHCANMachineVertex(
                ('INNER_EAR_PARAMS', 3),
                ('DT_BASED_PARAMS', 4),
                ('RANDOM_SEEDS', 5),
-               ('RECORDING', 6),
-               ('SDRAM_EDGE', 7),
-               ('PROFILE', 8),
-               ('PROVENANCE', 9)])
+               ('RECORDING', 7),
+               ('SDRAM_EDGE', 8),
+               ('PROFILE', 9),
+               ('PROVENANCE', 10)])
 
     # provenance items
     EXTRA_PROVENANCE_DATA_ENTRIES = Enum(
@@ -228,7 +245,7 @@ class IHCANMachineVertex(
 
     # recording regions
     RECORDING_REGIONS = Enum(
-        values="RECORDING_REGIONS",
+        value="RECORDING_REGIONS",
         names=[("SPIKE_RECORDING_REGION_ID", 0),
                ("SPIKE_PROBABILITY_REGION_ID", 1),
                ("N_RECORDING_REGIONS", 2)]
@@ -249,8 +266,24 @@ class IHCANMachineVertex(
             is_recording_prob_of_spike, n_fibres, ear_index,
             profile, fs, n_lsr, n_msr, n_hsr, max_n_fibres, drnl_data_points,
             n_buffers_in_sdram_total, seg_size):
+        """ constructor
+        
+        :param resample_factor: resample factor 
+        :param seed: the seed used for its random number generator in SpiNNaker
+        :param is_recording_spikes: bool saying if to record spikes
+        :param is_recording_prob_of_spike:  bool saying if to record spike prob
+        :param n_fibres: how many fibres to simulate
+        :param ear_index: which ear its based on
+        :param profile: bool flag for profiling
+        :param fs: sample freq
+        :param n_lsr: number of low freq hair cells
+        :param n_msr: number of med freq hair cells
+        :param n_hsr: number of high freq hair cells
+        :param max_n_fibres: max n fibres
+        :param drnl_data_points: the data po
+        :param n_buffers_in_sdram_total: 
+        :param seg_size: 
         """
-        :param ome: The connected ome vertex    """
 
         MachineVertex.__init__(self, label="IHCAN Node", constraints=None)
         AbstractProvidesNKeysForPartition.__init__(self)
@@ -266,6 +299,7 @@ class IHCANMachineVertex(
 
         self._re_sample_factor = resample_factor
         self._fs = fs
+        self._dt = 1.0 / self._fs
         self._n_atoms = n_fibres
         self._n_buffers_in_sdram_total = n_buffers_in_sdram_total
         self._seg_size = seg_size
@@ -284,7 +318,7 @@ class IHCANMachineVertex(
 
         if self._is_recording_spikes:
             self._recording_spikes_size = numpy.ceil(
-                (self._num_data_points / 8.0) * DataType.UINT32.size)
+                (self._num_data_points / 32.0) * DataType.UINT32.size)
         else:
             self._recording_spikes_size = 0
 
@@ -361,7 +395,8 @@ class IHCANMachineVertex(
         # system region
         sdram = constants.SYSTEM_BYTES_REQUIREMENT
 
-        # params + cilia + inner ear + seeds + sdram edge + DT elements
+        # params + cilia + inner ear + seeds + sdram edge + DT elements +
+        # synapse
         sdram_params = (
             self._N_PARAMETERS + self._N_CILIA_PARAMS + self._N_DT_PARAMS +
             + self._N_INNER_EAR_PARAM_PARAMS + self._N_SDRAM_EDGE_PARAMS +
@@ -376,7 +411,7 @@ class IHCANMachineVertex(
 
         # provenance region
         sdram += self.get_provenance_data_size(
-            self.EXTRA_PROVENANCE_DATA_ENTRIES.N_PROVENANCE_ELEMENTS)
+            self.EXTRA_PROVENANCE_DATA_ENTRIES.N_PROVENANCE_ELEMENTS.value)
 
         # recording region
         variable_sdram = VariableSDRAM(
@@ -436,7 +471,6 @@ class IHCANMachineVertex(
         # write n sdram buffers
         spec.write_value(self._n_buffers_in_sdram_total)
 
-
         # Write number of spontaneous fibres
         spec.write_value(int(self._n_lsr))
         spec.write_value(int(self._n_msr))
@@ -447,17 +481,66 @@ class IHCANMachineVertex(
             self, self.IHCAN_PARTITION_ID)
         spec.write_value(key)
 
-    def _write_seed_region(self, spec):
+    def _fill_in_cilia_parameter_region(self, spec):
+        """ writes cilia recips constants
+        
+        :param spec: dsg
+        :rtype: None 
+        """
+        spec.switch_write_focus(self.REGIONS.CILIA_PARAMS.value)
+        spec.write_value(self.CILIA_RECIPS0, DataType.FLOAT_32)
+        spec.write_value(self.CILIA_RECIPS1, DataType.FLOAT_32)
+
+    def _fill_in_inner_ear_parameter_region(self, spec):
+        """ writes the inner ear constants
+        
+        :param spec: dsg
+        :rtype: None 
+        """
+        spec.switch_write_focus(self.REGIONS.INNER_EAR_PARAMS.value)
+        spec.write_value(self.AN_CLEFT_LSR, DataType.FLOAT_32)
+        spec.write_value(self.AN_CLEFT_MSR, DataType.FLOAT_32)
+        spec.write_value(self.AN_CLEFT_HSR, DataType.FLOAT_32)
+        spec.write_value(self.AN_AVAIL_LSR, DataType.FLOAT_32)
+        spec.write_value(self.AN_AVAIL_MSR, DataType.FLOAT_32)
+        spec.write_value(self.AN_AVAIL_HSR, DataType.FLOAT_32)
+        spec.write_value(self.AN_REPRO_LSR, DataType.FLOAT_32)
+        spec.write_value(self.AN_REPRO_MSR, DataType.FLOAT_32)
+        spec.write_value(self.AN_REPRO_HSR, DataType.FLOAT_32)
+        spec.write_value(self.IHCV, DataType.FLOAT_32)
+        spec.write_value(self.M_ICA_CURR, DataType.FLOAT_32)
+        spec.write_value(self.EKP, DataType.FLOAT_32)
+        spec.write_value(self.CA_CURR_LSR, DataType.FLOAT_32)
+        spec.write_value(self.CA_CURR_MSR, DataType.FLOAT_32)
+        spec.write_value(self.CA_CURR_HSR, DataType.FLOAT_32)
+
+    def _fill_in_dt_param_region(self, spec):
+        """ writes the dt based constants
+        
+        :param spec: 
+        :rtype: None 
+        """
+        spec.switch_write_focus(self.REGIONS.DT_BASED_PARAMS.value)
+        spec.write_value(self._dt, DataType.FLOAT_32)
+        spec.write_value(self.Z, DataType.FLOAT_32)
+
+    def _fill_in_seed_region(self, spec):
+        """ stores seeds needed for the RNG on spinnaker
+        
+        :param spec: dsg.
+        :rtype: None 
+        """
+
         # Write the seed
-        spec.switch_write_focus(self.REGIONS.)
+        spec.switch_write_focus(self.REGIONS.RANDOM_SEEDS.value)
         data = numpy.array(self._seed, dtype=numpy.uint32)
         spec.write_array(data.view(numpy.uint32))
 
     def _reserve_memory_regions(self, spec):
         """ reserve memory regions
         
-        :param spec: 
-        :return: 
+        :param spec: the data spec
+        :return: None
         """
 
         # reserve system region
@@ -538,7 +621,23 @@ class IHCANMachineVertex(
         # fill in the parameters region
         self._fill_in_parameter_region(spec, routing_info)
 
+        # fill in the cilia params
+        self._fill_in_cilia_parameter_region(spec)
 
+        # fill in the inner ear params
+        self._fill_in_inner_ear_parameter_region(spec)
+
+        # fill in the dt based params region
+        self._fill_in_dt_param_region(spec)
+
+        # fill in the random seed region
+        self._fill_in_seed_region(spec)
+
+        # fill in the synapse region
+        self._fill_in_synapse_region(spec)
+
+        # fill in the sdram edge data region
+        self._fill_in_sdram_edge_region(spec, routing_info, machine_graph)
 
         # Write the recording regions
         spec.switch_write_focus(self.REGIONS.RECORDING.value)
@@ -590,20 +689,22 @@ class IHCANMachineVertex(
         data, _ = buffer_manager.get_data_by_placement(
             placement, self.RECORDING_REGIONS.SPIKE_RECORDING_REGION_ID.value)
 
-        formatted_data = numpy.array(data, dtype=numpy.uint8)
-
-        # only interested in every 4th byte!
-        formatted_data = formatted_data[::4]
+        formatted_data = numpy.array(data, dtype=numpy.uint32)
 
         # TODO:change names as output may not correspond to lsr + hsr fibres
-        lsr = formatted_data[0::2]
-        hsr = formatted_data[1::2]
+        lsr = formatted_data[0::self._n_lsr]
+        msr = formatted_data[self._n_lsr: self._n_lsr + self._n_msr]
+        hsr = formatted_data[self._n_msr::self._n_msr + self._n_hsr]
+
         unpacked_lsr = numpy.unpackbits(lsr)
+        unpacked_msr = numpy.unpackbits(msr)
         unpacked_hsr = numpy.unpackbits(hsr)
         output_data = numpy.asarray(
             [numpy.nonzero(unpacked_lsr)[0] * (self.MAGIC_1 / self._fs),
+             numpy.nonzero(unpacked_msr)[0] * (self.MAGIC_1 / self._fs),
              numpy.nonzero(unpacked_hsr)[0] * (self.MAGIC_1 / self._fs)])
-        output_length = unpacked_hsr.size + unpacked_lsr.size
+        output_length = (
+            unpacked_hsr.size + unpacked_lsr.size + unpacked_msr.size)
 
         # check all expected data has been recorded
         if output_length != self._num_data_points:

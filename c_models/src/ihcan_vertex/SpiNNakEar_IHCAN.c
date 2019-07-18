@@ -116,7 +116,7 @@ float dt_tau_m;
 //! \brief struct holding params from the param region
 parameters_struct parameters;
 
-//! \brief struct holding params from the sysnpase region
+//! \brief struct holding params determined from built in constants
 synapse_params_struct synapse_params;
 
 //! \brief cilia params
@@ -688,9 +688,6 @@ bool app_init(uint32_t *timer_period)
     rec_tau_ca = spin1_malloc(parameters.number_fibres * sizeof(float));
     g_max_ca = spin1_malloc(parameters.number_fibres * sizeof(float));
     ca_th = spin1_malloc(parameters.number_fibres * sizeof(float));
-
-
-    // initialise synapse_params_struct
     synapse_m = spin1_malloc(parameters.number_fibres * sizeof(float));
 
     // verify buffers were actually initialised

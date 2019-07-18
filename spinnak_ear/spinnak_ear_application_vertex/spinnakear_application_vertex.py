@@ -517,7 +517,8 @@ class SpiNNakEarApplicationVertex(
                     chosen_indices.count(self.HSR_FLAG),
                     self._model.max_n_fibres_per_ihcan,
                     drnl_vertex.n_data_points,
-                    self._model.n_buffers_in_sdram_total)
+                    self._model.n_buffers_in_sdram_total,
+                    self._model.seq_size)
                 seed_index += IHCANMachineVertex.N_SEEDS_PER_IHCAN_VERTEX
                 ichans.append(vertex)
 
