@@ -58,10 +58,49 @@
 //! \brief
 #define CILIA_RPC 0.04f
 
+//! ********************* inner hair cell constants ************** //
+
+//! \brief represents the capacitance of the hair cell 5e-12 farads
+#define HAIR_CELL_CAPACITANCE 5e-12f
+
+//! \brief the maximum calcium conductance for a channel in the model
+#define GMAXCA 20e-9
+
+//! \brief calcium channel time constant for low hair cells
+#define TAU_CA_HSR 1.0 / 500e-6
+
+//! \brief the maximum number of neurotransmitters possible at a synapse
+#define MAXIMUM_NUM_NEUROTRANSMITTERS_AT_SYNAPSE 4.0f
+
+//! \brief calcium channel time constant for medium hair cells
+#define TAU_CA_MSR 1.0 / 350e-6
+
+//! \brief calcium channel time constant for high hair cells
+#define TAU_CA_LSR 1.0 / 200e-6
+
+//! \brief hair cell membrane time constant tauM
+#define DT_TAU_M 5e-5
+
+//! \brief synaptic cleft neurotransmitter loss rate
+#define SYNAPSE_CLEFT_LOSS_RATE 150.0f
+
+//! \brief rate of neurotransmitter replacement to pre synapse from hair cell
+#define PRE_SYNAPSE_REPLACEMENT_RATE_HAIR_CELL 15.0f
+
+//! \brief rate of neurotransmitter replacement to presynapse from reuptake
+//! store
+#define PRE_SYNAPSE_REPLACEMENT_RATE_RE_UP_TAKE 300.0f
+
+//! \brief rate of neurotransmitter from the synaptic cleft to the reuptake
+//! store
+#define SYNAPSE_CLEFT_RATE_TO_RE_UP_TAKE_STORE 300.0f
+
+//! \brief  refractory period for ihc in seconds
+#define IHC_REFRACTORY_PERIOD 7.5e-4
 
 //! *********************** random named constants *****************//
 
-// \brief argument to avoid callback api
+//! \brief argument to avoid callback api
 #define IHCAN_FILLER_ARG 0
 
 //! \brief word to byte conversion
@@ -69,20 +108,6 @@
 
 //! \brief seed size
 #define N_SEED_ELEMENTS 4
-
-//! ***************************  random unnamed constants ***********//
-
-#define RANDOM_1 5e-12f
-#define RANDOM_2 20e-9
-#define RANDOM_3 1.0 / 500e-6
-#define RANDOM_4 4.0f
-#define RANDOM_5 1.0 / 350e-6
-#define RANDOM_6 1.0 / 200e-6
-#define RANDOM_7 5e-5
-#define RANDOM_8 150.0f
-#define RANDOM_9 15.0f
-#define RANDOM_10 300.0f
-#define RANDOM_11 7.5e-4
 
 //! \brief data spec regions
 typedef enum regions {

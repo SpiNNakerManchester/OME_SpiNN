@@ -722,7 +722,7 @@ bool app_init(uint32_t *timer_period)
 	//initialise cilia
 	cilia_filter_b2 = (double) dt_params.dt / CILIA_TC - 1.0;
 	cilia_filter_a1 = (double) dt_params.dt / CILIA_TC;
-	cilia_dt_cap = dt_params.dt / RANDOM_1;
+	cilia_dt_cap = dt_params.dt / HAIR_CELL_CAPACITANCE;
 
 	//==========Recurring Values=================//
 	for (int i=0; i < parameters.num_lsr; i++) {
@@ -731,9 +731,9 @@ bool app_init(uint32_t *timer_period)
 		an_avail[i] = inner_ear_params.an_avail_lsr;
 		an_repro[i] = inner_ear_params.an_repro_lsr;
 		refrac[i] = 0;
-		g_max_ca[i] = RANDOM_2;
-		rec_tau_ca[i] = RANDOM_6;
-		synapse_m[i] = RANDOM_4;
+		g_max_ca[i] = GMAXCA;
+		rec_tau_ca[i] = TAU_CA_LSR;
+		synapse_m[i] = MAXIMUM_NUM_NEUROTRANSMITTERS_AT_SYNAPSE;
 	}
 
 	for (int i = 0; i < parameters.num_msr; i++) {
@@ -742,9 +742,10 @@ bool app_init(uint32_t *timer_period)
 		an_avail[i + parameters.num_lsr] = inner_ear_params.an_avail_msr;
 		an_repro[i + parameters.num_lsr] = inner_ear_params.an_repro_msr;
 		refrac[i + parameters.num_lsr] = 0;
-		g_max_ca[i + parameters.num_lsr] = RANDOM_2;
-		rec_tau_ca[i + parameters.num_lsr] = RANDOM_5;
-		synapse_m[i + parameters.num_lsr] = RANDOM_4;
+		g_max_ca[i + parameters.num_lsr] = GMAXCA;
+		rec_tau_ca[i + parameters.num_lsr] = TAU_CA_MSR;
+		synapse_m[i + parameters.num_lsr] =
+		    MAXIMUM_NUM_NEUROTRANSMITTERS_AT_SYNAPSE;
 	}
 
 	for (int i = 0; i < parameters.num_hsr; i++) {
@@ -757,24 +758,25 @@ bool app_init(uint32_t *timer_period)
 		an_repro[i + parameters.num_lsr + parameters.num_msr] =
 		    inner_ear_params.an_repro_hsr;
 		refrac[i + parameters.num_lsr + parameters.num_msr] = 0;
-		g_max_ca[i + parameters.num_lsr + parameters.num_msr] = RANDOM_2;
-		rec_tau_ca[i + parameters.num_lsr + parameters.num_msr] = RANDOM_3;
-		synapse_m[i + parameters.num_lsr + parameters.num_msr] = RANDOM_4;
+		g_max_ca[i + parameters.num_lsr + parameters.num_msr] = GMAXCA;
+		rec_tau_ca[i + parameters.num_lsr + parameters.num_msr] = TAU_CA_HSR;
+		synapse_m[i + parameters.num_lsr + parameters.num_msr] =
+		    MAXIMUM_NUM_NEUROTRANSMITTERS_AT_SYNAPSE;
 	}
 
 	//=========initialise the pre synapse params========//
-	dt_tau_m = dt_params.dt / RANDOM_7;
+	dt_tau_m = dt_params.dt / DT_TAU_M;
 
 	//=======initialise the synapse params=======//
 	dt_spikes = (float) parameters.resampling_factor * dt_params.dt;
-	synapse_params.ldt = RANDOM_8 * dt_spikes;
-	synapse_params.ydt = RANDOM_9 * dt_spikes;
+	synapse_params.ldt = SYNAPSE_CLEFT_LOSS_RATE * dt_spikes;
+	synapse_params.ydt = PRE_SYNAPSE_REPLACEMENT_RATE_HAIR_CELL * dt_spikes;
 	if (synapse_params.ydt > 1.0f) {
 		synapse_params.ydt = 1.0f;
 	}
-	synapse_params.xdt = RANDOM_10 * dt_spikes;
-	synapse_params.rdt = RANDOM_10 * dt_spikes;
-	synapse_params.refrac_period = (RANDOM_11 / dt_spikes);
+	synapse_params.xdt = SYNAPSE_CLEFT_RATE_TO_RE_UP_TAKE_STORE * dt_spikes;
+	synapse_params.rdt = PRE_SYNAPSE_REPLACEMENT_RATE_RE_UP_TAKE * dt_spikes;
+	synapse_params.refrac_period = (IHC_REFRACTORY_PERIOD / dt_spikes);
     return true;
 }
 
