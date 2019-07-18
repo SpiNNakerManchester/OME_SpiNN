@@ -125,6 +125,9 @@ cilia_constants_struct cilia_params;
 //! \brief inner ear params
 inner_ear_param_struct inner_ear_params;
 
+//! \brief dt based params
+dt_params_struct dt_params;
+
 //! *********************** recurring values ******************//
 
 //! \brief 
@@ -167,6 +170,9 @@ float *ca_th;
 
 //! \brief
 uint *refact;
+
+//! \brief
+float *synapse_m;
 
 //! \brief tracker for when recording finishes putting spike data into sdram.
 //! Switches write buffers and handles profiling if needed
@@ -329,8 +335,8 @@ void process_chan(double *in_buffer) {
 
 			//======Synaptic Ca========//
 			float i_ca = g_max_ca[j] * mica_pow_conv * (ihcv_now - ECA);
-			float sub1 = i_ca * parameters.dt;
-			float sub2 = (ca_curr[j] * parameters.dt) * rec_tau_ca[j];
+			float sub1 = i_ca * dt_params.dt;
+			float sub2 = (ca_curr[j] * dt_params.dt) * rec_tau_ca[j];
 			ca_curr[j] += sub1 - sub2;
 
 			//invert Ca
@@ -338,14 +344,14 @@ void process_chan(double *in_buffer) {
 			if (i % parameters.resampling_factor == 0) {
 
 				//=====Vesicle Release Rate MAP_BS=====//
-				float ca_curr_pow = pos_ca_curr * parameters.z;
+				float ca_curr_pow = pos_ca_curr * dt_params.z;
 				for(float k = 0.0; k < POWER - 1; k++) {
-					ca_curr_pow *= pos_ca_curr * parameters.z;
+					ca_curr_pow *= pos_ca_curr * dt_params.z;
 				}
 
 				//=====Release Probability=======//
 				float release_prob = ca_curr_pow * dt_spikes;
-				float m_q = synapse_params.m[j] - an_avail[j];
+				float m_q = synapse_m[j] - an_avail[j];
 				if (m_q < 0.0f) {
 					m_q = 0.0f;
 				}
@@ -562,6 +568,12 @@ bool app_init(uint32_t *timer_period)
         data_specification_get_region(INNER_EAR_PARAMS, data_address),
         sizeof(inner_ear_param_struct));
 
+    // get dt params
+    spin1_memcpy(
+        &dt_params,
+        data_specification_get_region(DT_BASED_PARAMS, data_address),
+        sizeof(dt_params_struct));
+
     // set the current ihcv to the start point
     ihcv_now = inner_ear_params.ihcv;
     m_ica_curr = inner_ear_params.m_ica_curr;
@@ -679,12 +691,12 @@ bool app_init(uint32_t *timer_period)
 
 
     // initialise synapse_params_struct
-    synapse_params.m = spin1_malloc(parameters.number_fibres * sizeof(float));
+    synapse_m = spin1_malloc(parameters.number_fibres * sizeof(float));
 
     // verify buffers were actually initialised
 	if (refact == NULL || ca_curr == NULL || an_cleft == NULL ||
 	        an_avail == NULL || an_repro == NULL || ca_th == NULL ||
-	        synapse_params.m == NULL || rec_tau_ca == NULL ||
+	        synapse_m == NULL || rec_tau_ca == NULL ||
 	        g_max_ca == NULL) {
 		log_error("cannot allocate params based off number of fibres\n");
 		return false;
@@ -708,9 +720,9 @@ bool app_init(uint32_t *timer_period)
         sizeof(mars_kiss64_seed_t));
 
 	//initialise cilia
-	cilia_filter_b2 = (double) parameters.dt / CILIA_TC - 1.0;
-	cilia_filter_a1 = (double) parameters.dt / CILIA_TC;
-	cilia_dt_cap = parameters.dt / RANDOM_1;
+	cilia_filter_b2 = (double) dt_params.dt / CILIA_TC - 1.0;
+	cilia_filter_a1 = (double) dt_params.dt / CILIA_TC;
+	cilia_dt_cap = dt_params.dt / RANDOM_1;
 
 	//==========Recurring Values=================//
 	for (int i=0; i < parameters.num_lsr; i++) {
@@ -721,7 +733,7 @@ bool app_init(uint32_t *timer_period)
 		refrac[i] = 0;
 		g_max_ca[i] = RANDOM_2;
 		rec_tau_ca[i] = RANDOM_6;
-		synapse_params.m[i] = RANDOM_4;
+		synapse_m[i] = RANDOM_4;
 	}
 
 	for (int i = 0; i < parameters.num_msr; i++) {
@@ -732,7 +744,7 @@ bool app_init(uint32_t *timer_period)
 		refrac[i + parameters.num_lsr] = 0;
 		g_max_ca[i + parameters.num_lsr] = RANDOM_2;
 		rec_tau_ca[i + parameters.num_lsr] = RANDOM_5;
-		synapse_params.m[i + parameters.num_lsr] = RANDOM_4;
+		synapse_m[i + parameters.num_lsr] = RANDOM_4;
 	}
 
 	for (int i = 0; i < parameters.num_hsr; i++) {
@@ -747,15 +759,14 @@ bool app_init(uint32_t *timer_period)
 		refrac[i + parameters.num_lsr + parameters.num_msr] = 0;
 		g_max_ca[i + parameters.num_lsr + parameters.num_msr] = RANDOM_2;
 		rec_tau_ca[i + parameters.num_lsr + parameters.num_msr] = RANDOM_3;
-		synapse_params.m[
-		    i + parameters.num_lsr + parameters.num_msr] = RANDOM_4;
+		synapse_m[i + parameters.num_lsr + parameters.num_msr] = RANDOM_4;
 	}
 
 	//=========initialise the pre synapse params========//
-	dt_tau_m = parameters.dt / RANDOM_7;
+	dt_tau_m = dt_params.dt / RANDOM_7;
 
 	//=======initialise the synapse params=======//
-	dt_spikes = (float) parameters.resampling_factor * parameters.dt;
+	dt_spikes = (float) parameters.resampling_factor * dt_params.dt;
 	synapse_params.ldt = RANDOM_8 * dt_spikes;
 	synapse_params.ydt = RANDOM_9 * dt_spikes;
 	if (synapse_params.ydt > 1.0f) {

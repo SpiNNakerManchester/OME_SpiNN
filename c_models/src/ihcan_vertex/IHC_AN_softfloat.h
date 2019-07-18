@@ -90,6 +90,7 @@ typedef enum regions {
     PARAMS,
     CILIA_PARAMS,
     INNER_EAR_PARAMS,
+    DT_BASED_PARAMS,
     RANDOM_SEEDS,
     RECORDING,
     SDRAM_EDGE_ADDRESS,
@@ -128,11 +129,13 @@ typedef struct parameters_struct{
     int num_msr;
     int num_hsr;
     uint my_key;
-    float dt;
-    float dt_spikes;
-    float dt_segment;
-    float z;
 } parameters_struct;
+
+//! \brief elements based off dt
+typedef struct dt_params_struct{
+    float dt;
+    float z;
+}dt_params_struct;
 
 //! \brief sdram edge data from sdram
 typedef struct sdram_out_buffer_param{
@@ -146,7 +149,6 @@ typedef struct synapse_params_struct{
     float xdt;
     float ldt;
     float rdt;
-    float *m;
 } synapse_params_struct;
 
 //! \brief cilia constants struct params
