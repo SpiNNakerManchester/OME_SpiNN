@@ -447,7 +447,7 @@ static inline bool app_init(uint32_t *timer_period) {
     log_info("is rec:%d", parameters.is_recording);
     if (parameters.is_recording) {
         if (!recording_initialize(
-                data_specification_get_region(RECORDING, address),
+                data_specification_get_region(RECORDING, data_address),
                 &recording_flags)()) {
             log_error("failed to set up recording");
             return false;

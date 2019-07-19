@@ -536,7 +536,7 @@ bool app_init(uint32_t *timer_period)
 
     // set up recording
      if (!recording_initialize(
-            data_specification_get_region(RECORDING, address),
+            data_specification_get_region(RECORDING, data_address),
             &recording_flags)){
         log_error("Failed to initialise recording");
         return false;
