@@ -96,6 +96,7 @@ uint32_t recording_flags;
 // simulation interface demands
 static uint32_t simulation_ticks = 0;
 uint32_t time;
+uint32_t time_pointer;
 
 //! \brief interface for getting the weight for a given synapse type
 //! \param[in] synapse_type_index the synapse type (e.g. exc. or inh.)
@@ -112,17 +113,6 @@ void neuron_add_inputs(
     else if (synapse_type_index == INHIBITORY) {
         moc_spike_weight -= weights_this_timestep;
     }
-}
-
-//! \brief Initialises the recording parts of the model
-//! \return True if recording initialisation is successful, false otherwise
-static bool initialise_recording() {
-    address_t address = data_specification_get_data_address();
-    address_t recording_region = data_specification_get_region(
-            RECORDING, address);
-
-    bool success = recording_initialize(recording_region, &recording_flags);
-    return success;
 }
 
 //! \brief write data to sdram edge
@@ -439,13 +429,14 @@ static inline bool app_init(uint32_t *timer_period) {
 	write_switch = 0;
 
     //obtain data spec
-	address_t data_address = data_specification_get_data_address();
+	data_specification_metadata_t *data_address =
+	    data_specification_get_data_address();
 
     // Get the timing details and set up the simulation interface
     if (!simulation_initialise(
             data_specification_get_region(SYSTEM, data_address),
             APPLICATION_NAME_HASH, timer_period, &simulation_ticks,
-            NULL, SDP_PRIORITY, DMA_TRANSFER_DONE_PRIORITY)) {
+            NULL, &time_pointer, SDP_PRIORITY, DMA_TRANSFER_DONE_PRIORITY)) {
         return false;
     }
 
@@ -455,7 +446,9 @@ static inline bool app_init(uint32_t *timer_period) {
 
     log_info("is rec:%d", parameters.is_recording);
     if (parameters.is_recording) {
-        if (!initialise_recording()) {
+        if (!recording_initialize(
+                data_specification_get_region(RECORDING, address),
+                &recording_flags)()) {
             log_error("failed to set up recording");
             return false;
         }

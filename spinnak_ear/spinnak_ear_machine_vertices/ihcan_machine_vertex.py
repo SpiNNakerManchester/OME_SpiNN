@@ -337,7 +337,7 @@ class IHCANMachineVertex(
     @property
     @overrides(ProvidesProvenanceDataFromMachineImpl._provenance_region_id)
     def _provenance_region_id(self):
-        return self._REGIONS.PROVENANCE.value
+        return self.REGIONS.PROVENANCE.value
 
     @overrides(ProvidesProvenanceDataFromMachineImpl.
                get_provenance_data_from_machine)
@@ -426,7 +426,8 @@ class IHCANMachineVertex(
 
     #TODO FIX!!!!!!!!!!!!!
     def _determine_recording_sdram_requirements(self):
-        return self._recording_spikes_size
+        return (self._recording_spikes_size +
+                self._recording_spike_probability_size)
 
     @overrides(AbstractHasAssociatedBinary.get_binary_file_name)
     def get_binary_file_name(self):
@@ -633,9 +634,6 @@ class IHCANMachineVertex(
         # fill in the random seed region
         self._fill_in_seed_region(spec)
 
-        # fill in the synapse region
-        self._fill_in_synapse_region(spec)
-
         # fill in the sdram edge data region
         self._fill_in_sdram_edge_region(spec, routing_info, machine_graph)
 
@@ -643,7 +641,8 @@ class IHCANMachineVertex(
         spec.switch_write_focus(self.REGIONS.RECORDING.value)
         ip_tags = tags.get_ip_tags_for_vertex(self) or []
         spec.write_array(recording_utilities.get_recording_header_array(
-            [self._recording_size], ip_tags=ip_tags))
+            [self._recording_spikes_size,
+             self._recording_spike_probability_size], ip_tags=ip_tags))
 
         # Write profile regions
         self._write_profile_dsg(spec)

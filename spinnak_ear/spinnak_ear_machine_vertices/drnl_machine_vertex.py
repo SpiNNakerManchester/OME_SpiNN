@@ -426,11 +426,12 @@ class DRNLMachineVertex(
         for edge in machine_graph.get_edges_starting_at_vertex(self):
             partition = machine_graph.get_outgoing_partition_for_edge(edge)
             if (isinstance(partition, AbstractSDRAMPartition) and
-                    partition.identifer == self.DRNL_SDRAM_PARTITION_ID):
+                    partition.identifier == self.DRNL_SDRAM_PARTITION_ID):
                 spec.write_value(partition.sdram_base_address)
-                spec.write_value(partition.total_sdram_requirements)
+                spec.write_value(partition.total_sdram_requirements())
                 spec.write_value(
-                    partition.total_sdram_requirements / DataType.FLOAT_64.size)
+                    partition.total_sdram_requirements() /
+                    DataType.FLOAT_64.size)
                 break
 
     def _write_filter_params(self, spec):

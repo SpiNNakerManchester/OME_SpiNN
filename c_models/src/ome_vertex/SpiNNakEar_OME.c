@@ -29,6 +29,9 @@ uint read_switch = 0;
 //! \brief control param for running
 bool app_complete = false;
 
+//! \brief simulation timer tick (based on its time step)
+uint32_t time_pointer;
+
 //! \brief the conversion between uint32_t and floats
 uint_float_union multicast_union;
 
@@ -274,13 +277,14 @@ bool app_init(void)
 	log_info("[core %d] -----------------------\n", spin1_get_core_id());
 	log_info("[core %d] starting simulation\n", spin1_get_core_id());
 	//obtain data spec
-	address_t data_address = data_specification_get_data_address();
+	data_specification_metadata_t *data_address =
+	    data_specification_get_data_address();
 
     // Get the timing details and set up the simulation interface
     if (!simulation_initialise(
             data_specification_get_region(SYSTEM, data_address),
-            APPLICATION_NAME_HASH, NULL, NULL, NULL, SDP_PRIORITY,
-            DMA_TRANSFER_DONE_PRIORITY)) {
+            APPLICATION_NAME_HASH, NULL, NULL, NULL, &time_pointer,
+            SDP_PRIORITY, DMA_TRANSFER_DONE_PRIORITY)) {
         return false;
     }
 

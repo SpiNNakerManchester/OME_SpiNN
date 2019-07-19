@@ -195,9 +195,6 @@ class OMEMachineVertex(
         # Write dt
         spec.write_value(1.0 / self._fs, DataType.FLOAT_64)
 
-        # write pi
-        spec.write_value()
-
     def _write_filter_coeffs(self, spec):
         """ write filter coeffs to dsg
         

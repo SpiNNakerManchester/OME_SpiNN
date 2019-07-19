@@ -1,8 +1,13 @@
-from spynnaker.pyNN.models.abstract_pynn_model import AbstractPyNNModel
-from spinn_utilities.overrides import overrides
-from spinnak_ear.spinnak_ear_application_vertex.spinnakear_application_vertex\
-    import SpiNNakEarApplicationVertex
+import os
+
 import numpy as np
+
+from spinn_front_end_common.utilities import globals_variables
+from spinn_utilities.overrides import overrides
+from spinnak_ear import model_binaries
+from spinnak_ear.spinnak_ear_application_vertex.spinnakear_application_vertex \
+    import SpiNNakEarApplicationVertex
+from spynnaker.pyNN.models.abstract_pynn_model import AbstractPyNNModel
 
 
 class SpiNNakEar(AbstractPyNNModel):
@@ -197,6 +202,10 @@ class SpiNNakEar(AbstractPyNNModel):
                 max_power, self._n_channels))
         else:
             self._pole_freqs = pole_freqs
+
+        # update finder to look inside ear model binaries location
+        globals_variables.get_simulator().executable_finder.add_path(
+            os.path.dirname(model_binaries.__file__))
 
     @overrides(AbstractPyNNModel.create_vertex)
     def create_vertex(self, n_neurons, label, constraints):

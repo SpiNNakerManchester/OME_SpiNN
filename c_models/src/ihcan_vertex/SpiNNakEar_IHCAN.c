@@ -52,6 +52,9 @@ static uint32_t infinite_run;
 //! \brief time / ticks done
 static uint32_t time;
 
+//! \brief simulation timer tick (based on its time step)
+uint32_t time_pointer;
+
 //********************* switch **************//
 
 //! \brief bool state for switching dtcm input buffers
@@ -508,21 +511,6 @@ void _store_provenance_data(address_t provenance_region){
     log_debug("finished other provenance data");
 }
 
-
-//! \brief Initialises the recording parts of the model
-//! \return True if recording initialisation is successful, false otherwise
-static bool initialise_recording(){
-    address_t address = data_specification_get_data_address();
-    address_t recording_region = data_specification_get_region(
-            RECORDING, address);
-
-    log_info("Recording starts at 0x%08x", recording_region);
-
-    bool success = recording_initialize(recording_region, &recording_flags);
-    log_info("Recording flags = 0x%08x", recording_flags);
-    return success;
-}
-
 //application initialisation
 //! \param[in] timer_period: the pointer for the timer period
 //! \return bool stating if the init was successful
@@ -531,12 +519,13 @@ bool app_init(uint32_t *timer_period)
 	log_info("starting init \n");
 
 	//obtain data spec
-	address_t data_address = data_specification_get_data_address();
+	data_specification_metadata_t *data_address =
+	    data_specification_get_data_address();
 	// Get the timing details and set up the simulation interface
     if (!simulation_initialise(
             data_specification_get_region(SYSTEM, data_address),
             APPLICATION_NAME_HASH, timer_period, &simulation_ticks,
-            &infinite_run, SDP_PRIORITY, DMA)) {
+            &infinite_run, &time_pointer, SDP_PRIORITY, DMA)) {
         return false;
     }
 
@@ -546,7 +535,9 @@ bool app_init(uint32_t *timer_period)
         data_specification_get_region(PROVENANCE, data_address));
 
     // set up recording
-     if (!initialise_recording()){
+     if (!recording_initialize(
+            data_specification_get_region(RECORDING, address),
+            &recording_flags)){
         log_error("Failed to initialise recording");
         return false;
     }

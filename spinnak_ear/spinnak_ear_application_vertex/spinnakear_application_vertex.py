@@ -1,3 +1,4 @@
+from data_specification.enums import DataType
 from pacman.model.graphs.application import ApplicationEdge
 from pacman.model.graphs.common import Slice, EdgeTrafficType
 from pacman.model.graphs.impl.constant_sdram_machine_partition import \
@@ -534,9 +535,8 @@ class SpiNNakEarApplicationVertex(
 
                 # sdram edge
                 sdram_edge = SDRAMMachineEdge(
-                    drnl_vertex, vertex,
-                    "sdram between {} and {}".format(drnl_vertex, vertex),
-                    DRNLMachineVertex.sdram_edge_size)
+                    drnl_vertex, vertex, drnl_vertex.sdram_edge_size,
+                    "sdram between {} and {}".format(drnl_vertex, vertex))
                 machine_graph.add_edge(
                     sdram_edge, drnl_vertex.DRNL_SDRAM_PARTITION_ID)
                 graph_mapper.add_edge_mapping(sdram_edge, sdram_app_edge)
