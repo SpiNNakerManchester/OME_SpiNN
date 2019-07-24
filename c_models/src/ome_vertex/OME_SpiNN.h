@@ -9,7 +9,6 @@ typedef struct parameters_struct{
     int total_ticks;
     int seg_size;
     uint key;
-    int timer_tick_period;
     REAL dt;
 } parameters_struct;
 
@@ -34,8 +33,14 @@ typedef enum regions {
     PARAMS,
     FILTER_COEFFS,
     DATA,
-    PROFILER
+    PROFILER,
+    PROVENANCE
 } regions;
+
+//! \brief provenance data items
+typedef enum provenance_items {
+    B0, B1, B2, A0, A1, A2
+} provenance_items;
 
 //! \brief callback priorities
 typedef enum callback_priorities {

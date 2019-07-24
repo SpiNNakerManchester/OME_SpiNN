@@ -26,12 +26,6 @@
 uint seg_index = 0;
 uint read_switch = 0;
 
-//! \brief control param for running
-bool app_complete = false;
-
-//! \brief simulation timer tick (based on its time step)
-uint32_t time_pointer;
-
 //! \brief the conversion between uint32_t and floats
 uint_float_union multicast_union;
 
@@ -80,8 +74,16 @@ REAL past_stapes_input[2];
 //! \brief ?????????
 REAL past_stapes[2];
 
-//! \brief ???????
+// *************** SIM PARAMS **************** //
+
+//! \brief what tick we're on
 int read_ticks = 0;
+
+//! \brief infinite run pointer
+static uint32_t infinite_run;
+
+//! \brief simulation timer tick (based on its time step)
+uint32_t time;
 
 //! \brief dtcm buffers
 REAL *dtcm_buffer_a;
@@ -96,22 +98,27 @@ parameters_struct parameters;
 filter_coeffs_struct filter_coeffs;
 data_struct data;
 
-//! \brief clean up at end
-//! \return None
-void app_end() {
-    app_complete = true;
-    log_info("All data has been sent seg_index=%d", seg_index);
-    #ifdef PROFILE
-        profiler_write_entry_disable_irq_fiq(
-            PROFILER_EXIT | PROFILER_DMA_READ);
-        profiler_finalise();
-    #endif
-	log_info("b0:%k", (accum)stapes_hp_b[0]);
+//! \brief stores provenance data
+//! \param[in] provenance_region: the sdram location for the prov data.
+void _store_provenance_data(address_t provenance_region) {
+    log_debug("writing other provenance data");
+
+    // store the data into the provenance data region
+    provenance_region[B0] = stapes_hp_b[0];
+    provenance_region[B1] = stapes_hp_b[1];
+    provenance_region[B2] = stapes_hp_b[2];
+    provenance_region[A0] = stapes_hp_a[0];
+    provenance_region[A1] = stapes_hp_a[1];
+    provenance_region[A2] = stapes_hp_a[2];
+
+    log_info("b0:%k", (accum)stapes_hp_b[0]);
     log_info("b1:%k", (accum)stapes_hp_b[1]);
     log_info("b2:%k", (accum)stapes_hp_b[2]);
 	log_info("a0:%k", (accum)stapes_hp_a[0]);
 	log_info("a1:%k", (accum)stapes_hp_a[1]);
     log_info("a2:%k", (accum)stapes_hp_a[2]);
+
+    log_debug("finished other provenance data");
 }
 
 //! \brief DMA read every timer tick to get input data.
@@ -124,7 +131,7 @@ void data_read(uint unused_a, uint unused_b) {
 
 	REAL *dtcm_buffer_in;
 
-	//read from DMA and copy into DTCM
+	//read from DMA and copy into DTCM if there is still stuff to read
 	if (read_ticks < parameters.total_ticks) {
 	    #ifdef PROFILE
             if (seg_index == 0) {
@@ -152,7 +159,11 @@ void data_read(uint unused_a, uint unused_b) {
    	// stop if desired number of ticks reached
     else if (read_ticks >= parameters.total_ticks && !app_complete) {
         simulation_handle_pause_resume(NULL);
-        app_end();
+        #ifdef PROFILE
+            profiler_write_entry_disable_irq_fiq(
+                PROFILER_EXIT | PROFILER_DMA_READ);
+            profiler_finalise();
+        #endif
         simulation_ready_to_read();
     }
 }
@@ -272,7 +283,7 @@ void transfer_handler(uint unused0, uint unused1) {
 
 //! \brief application initialisation
 //! \return bool saying if the init was successful or not
-bool app_init(void)
+bool app_init(uint32_t *timer_period)
 {
 	log_info("[core %d] -----------------------\n", spin1_get_core_id());
 	log_info("[core %d] starting simulation\n", spin1_get_core_id());
@@ -283,11 +294,18 @@ bool app_init(void)
     // Get the timing details and set up the simulation interface
     if (!simulation_initialise(
             data_specification_get_region(SYSTEM, data_address),
-            APPLICATION_NAME_HASH, NULL, NULL, NULL, &time_pointer,
+            APPLICATION_NAME_HASH, timer_period, &simulation_ticks,
+            &infinite_run, &time,
             SDP_PRIORITY, DMA_TRANSFER_DONE_PRIORITY)) {
         return false;
     }
 
+     // sort out provenance data
+    simulation_set_provenance_function(
+        _store_provenance_data,
+        data_specification_get_region(PROVENANCE, data_address));
+
+    // get params from sdram
     spin1_memcpy(
         &parameters, data_specification_get_region(PARAMS, data_address),
          sizeof(parameters_struct));
@@ -301,8 +319,6 @@ bool app_init(void)
 
     // Get the key to send the data with
     log_info("OME-->DRNL key=%d\n", parameters.key);
-
-    log_info("timer period=%d", parameters.timer_tick_period);
 
 	// Allocate buffers
 	//input double buffers
@@ -407,9 +423,12 @@ bool app_init(void)
 
 //! \brief entrance method
 void c_main() {
-    if (app_init()) {
+
+    uint32_t timer_period;
+    if (app_init(&timer_period)) {
+
         //set timer tick
-        spin1_set_timer_tick(parameters.timer_tick_period);
+        spin1_set_timer_tick(timer_period);
 
         //setup callbacks
         //process channel once data input has been read to DTCM
