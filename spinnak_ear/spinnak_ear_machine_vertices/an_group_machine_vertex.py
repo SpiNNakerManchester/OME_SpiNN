@@ -12,7 +12,10 @@ from spinn_front_end_common.abstract_models.abstract_has_associated_binary \
 from spinn_front_end_common.abstract_models\
     .abstract_generates_data_specification \
     import AbstractGeneratesDataSpecification
-from spinn_front_end_common.utilities.utility_objs import ExecutableType
+from spinn_front_end_common.interface.provenance import \
+    ProvidesProvenanceDataFromMachineImpl
+from spinn_front_end_common.utilities.utility_objs import ExecutableType, \
+    ProvenanceDataItem
 from spinn_front_end_common.utilities import constants
 from spinn_front_end_common.interface.simulation import simulation_utilities
 from spinn_front_end_common.abstract_models\
@@ -26,15 +29,22 @@ from enum import Enum
 class ANGroupMachineVertex(
         MachineVertex, AbstractHasAssociatedBinary,
         AbstractGeneratesDataSpecification,
-        AbstractProvidesNKeysForPartition):
+        AbstractProvidesNKeysForPartition,
+        ProvidesProvenanceDataFromMachineImpl):
     """ A vertex that runs the multi-cast acknowledge algorithm
     """
 
-    AN_GROUP_PARTITION_IDENTIFER = "AN"
+    # provenance items
+    EXTRA_PROVENANCE_DATA_ENTRIES = Enum(
+        value="EXTRA_PROVENANCE_DATA_ENTRIES",
+        names=[("N_SPIKES", 0),
+               ("N_PROVENANCE_ELEMENTS", 1)])
+
+    AN_GROUP_PARTITION_IDENTIFIER = "AN"
 
     # The data type of the keys
     _KEY_MASK_ENTRY_DTYPE = [
-        ("key", "<u4"), ("mask", "<u4"),("offset", "<u4")]
+        ("key", "<u4"), ("mask", "<u4"), ("offset", "<u4")]
 
     _KEY_MASK_ENTRY_SIZE_BYTES = 12
 
@@ -44,7 +54,9 @@ class ANGroupMachineVertex(
     REGIONS = Enum(
         value="REGIONS",
         names=[('SYSTEM', 0),
-               ('PARAMETERS', 1)])
+               ('PARAMETERS', 1),
+               ('KEY_MAP', 2),
+               ('PROVENANCE', 3)])
 
     def __init__(self, n_atoms, n_children, is_final_row, final_row_lo_atom):
         """
@@ -73,6 +85,9 @@ class ANGroupMachineVertex(
         sdram = constants.SYSTEM_BYTES_REQUIREMENT
         sdram += self._N_PARAMETER_BYTES
         sdram += self._KEY_MASK_ENTRY_SIZE_BYTES * self._n_children
+        # provenance region
+        sdram += self.get_provenance_data_size(
+            self.EXTRA_PROVENANCE_DATA_ENTRIES.N_PROVENANCE_ELEMENTS.value)
 
         resources = ResourceContainer(
             dtcm=DTCMResource(0),
@@ -90,65 +105,100 @@ class ANGroupMachineVertex(
         # return ExecutableType.SYNC
         return ExecutableType.USES_SIMULATION_INTERFACE
 
-    @inject_items({
-        "machine_time_step": "MachineTimeStep",
-        "time_scale_factor": "TimeScaleFactor",
-        "routing_info": "MemoryRoutingInfos",
-        "tags": "MemoryTags",
-        "placements": "MemoryPlacements",
-        "machine_graph":"MemoryMachineGraph",
-    })
-    @overrides(
-        AbstractGeneratesDataSpecification.generate_data_specification,
-        additional_arguments=[
-            "machine_time_step", "time_scale_factor","routing_info", "tags",
-            "placements","machine_graph"])
-    def generate_data_specification(
-            self, spec, placement, machine_time_step,
-            time_scale_factor, routing_info, tags, placements, machine_graph):
+    @property
+    @overrides(ProvidesProvenanceDataFromMachineImpl._provenance_region_id)
+    def _provenance_region_id(self):
+        return self.REGIONS.PROVENANCE.value
 
+    @property
+    @overrides(ProvidesProvenanceDataFromMachineImpl._n_additional_data_items)
+    def _n_additional_data_items(self):
+        return self.EXTRA_PROVENANCE_DATA_ENTRIES.N_PROVENANCE_ELEMENTS.value
+
+    @overrides(ProvidesProvenanceDataFromMachineImpl.
+               get_provenance_data_from_machine)
+    def get_provenance_data_from_machine(self, transceiver, placement):
+        provenance_data = self._read_provenance_data(transceiver, placement)
+        provenance_items = self._read_basic_provenance_items(
+            provenance_data, placement)
+        provenance_data = self._get_remaining_provenance_data_items(
+            provenance_data)
+
+        n_spikes = provenance_data[
+            self.EXTRA_PROVENANCE_DATA_ENTRIES.N_SPIKES.value]
+        label, x, y, p, names = self._get_placement_details(placement)
+
+        # translate into provenance data items
+        provenance_items.append(ProvenanceDataItem(
+            self._add_name(names, "n spikes transmitted"), n_spikes))
+        return provenance_items
+
+    def _reserve_memory_regions(self, spec):
+        """ reserve dsg regions
+        
+        :param spec: dsg spec
+        :rtype: None 
+        """
         # reserve system region
         spec.reserve_memory_region(
             region=self.REGIONS.SYSTEM.value,
             size=constants.SIMULATION_N_BYTES, label='systemInfo')
 
-        # Reserve and write the parameters region
-        region_size = (
-            self._N_PARAMETER_BYTES +
-            (self._n_children * self._KEY_MASK_ENTRY_SIZE_BYTES))
-        spec.reserve_memory_region(self.REGIONS.PARAMETERS.value, region_size)
+        # Reserve parameters region
+        spec.reserve_memory_region(
+            self.REGIONS.PARAMETERS.value, self._N_PARAMETER_BYTES)
 
-        # simulation.c requirements
-        spec.switch_write_focus(self.REGIONS.SYSTEM.value)
-        spec.write_array(
-            simulation_utilities.get_simulation_header_array(
-                self.get_binary_file_name(), machine_time_step,
-                time_scale_factor))
+        # Reserve the keys map region
+        spec.reserve_memory_region(
+            self.REGIONS.KEY_MAP.value,
+            self._n_children * self._KEY_MASK_ENTRY_SIZE_BYTES)
 
+        # reserve provenance data region
+        self.reserve_provenance_data_region(spec)
+
+    def _fill_in_params_region(self, spec, machine_graph, routing_info):
+        """ fills in the dsg region for params
+        
+        :param spec: dsg spec
+        :param machine_graph: machine graph 
+        :param routing_info: routing info
+        :rtype: None 
+        """
         spec.switch_write_focus(self.REGIONS.PARAMETERS.value)
 
         # Write the number of child nodes
-        spec.write_value(self.n_atoms)
+        spec.write_value(self._n_children)
 
         # Write the routing key
         partitions = list(
             machine_graph.get_outgoing_edge_partitions_starting_at_vertex(
                 self))
         if len(partitions) == 0:
-            # write 0 key
-            spec.write_value(0)
             # write false is_key
             spec.write_value(0)
+            # write 0 key
+            spec.write_value(0)
         else:
-            key = routing_info.get_first_key_from_partition(partitions[0])
-            spec.write_value(key)
             # write true is_key
             spec.write_value(1)
+
+            key = routing_info.get_first_key_from_partition(partitions[0])
+            spec.write_value(key)
 
         # write is final
         spec.write_value(self._is_final_row)
         # write n_atoms
         spec.write_value(self._n_atoms)
+
+    def _fill_in_key_map_region(self, spec, machine_graph, routing_info):
+        """ fill in the key map region
+        
+        :param spec: dsg spec
+        :param machine_graph: machine graph 
+        :param routing_info: routing info
+        :rtype: None 
+        """
+        spec.switch_write_focus(self.REGIONS.KEY_MAP.value)
 
         # key and mask table generation
         key_and_mask_table = numpy.zeros(
@@ -168,6 +218,38 @@ class ANGroupMachineVertex(
         # sort entries by key
         key_and_mask_table.sort(order='key')
         spec.write_array(key_and_mask_table.view("<u4"))
+
+
+    @inject_items({
+        "machine_time_step": "MachineTimeStep",
+        "time_scale_factor": "TimeScaleFactor",
+        "routing_info": "MemoryRoutingInfos",
+        "tags": "MemoryTags",
+        "placements": "MemoryPlacements",
+        "machine_graph": "MemoryMachineGraph",
+    })
+    @overrides(
+        AbstractGeneratesDataSpecification.generate_data_specification,
+        additional_arguments=[
+            "machine_time_step", "time_scale_factor","routing_info", "tags",
+            "placements", "machine_graph"])
+    def generate_data_specification(
+            self, spec, placement, machine_time_step,
+            time_scale_factor, routing_info, tags, placements, machine_graph):
+
+        # reserve regions
+        self._reserve_memory_regions(spec)
+
+        # simulation.c requirements
+        spec.switch_write_focus(self.REGIONS.SYSTEM.value)
+        spec.write_array(
+            simulation_utilities.get_simulation_header_array(
+                self.get_binary_file_name(), machine_time_step,
+                time_scale_factor))
+
+        # app level regions fill in
+        self._fill_in_params_region(spec, machine_graph, routing_info)
+        self._fill_in_key_map_region(spec, machine_graph, routing_info)
 
         # End the specification
         spec.end_specification()

@@ -14,7 +14,10 @@ from spinn_front_end_common.abstract_models.abstract_has_associated_binary \
 from spinn_front_end_common.abstract_models\
     .abstract_generates_data_specification \
     import AbstractGeneratesDataSpecification
-from spinn_front_end_common.utilities.utility_objs import ExecutableType
+from spinn_front_end_common.interface.provenance import \
+    ProvidesProvenanceDataFromMachineImpl
+from spinn_front_end_common.utilities.utility_objs import ExecutableType, \
+    ProvenanceDataItem
 from spinn_front_end_common.abstract_models\
     .abstract_provides_n_keys_for_partition \
     import AbstractProvidesNKeysForPartition
@@ -32,7 +35,8 @@ import scipy.signal as sig
 class OMEMachineVertex(
         MachineVertex, AbstractEarProfiled, AbstractHasAssociatedBinary,
         AbstractGeneratesDataSpecification,
-        AbstractProvidesNKeysForPartition):
+        AbstractProvidesNKeysForPartition,
+        ProvidesProvenanceDataFromMachineImpl):
     """ A vertex that runs the OME algorithm
     """
 
@@ -61,7 +65,8 @@ class OMEMachineVertex(
 
     # The filter coeffs
     # 1. shb1, 2. shb2, 3. shb3, 4. sha1, 5.sha2, 6.sha3
-    _N_FILTER_COEFFS_BYTES = 6 * DataType.FLOAT_64.size
+    _N_FILTER_COEFFS_ITEMS = 6
+    _N_FILTER_COEFFS_BYTES = _N_FILTER_COEFFS_ITEMS * DataType.FLOAT_64.size
 
     # outgoing partition name from OME vertex
     OME_PARTITION_ID = "OMEData"
@@ -72,10 +77,23 @@ class OMEMachineVertex(
                ('PARAMETERS', 1),
                ('FILTER_COEFFS', 2),
                ('DATA', 3),
-               ('PROFILE', 4)])
+               ('PROFILE', 4),
+               ('PROVENANCE', 5)])
+
+    # provenance items
+    EXTRA_PROVENANCE_DATA_ENTRIES = Enum(
+        value="EXTRA_PROVENANCE_DATA_ENTRIES",
+        names=[("B0", 0),
+               ("B1", 1),
+               ("B2", 2),
+               ("A0", 3),
+               ("A1", 4),
+               ("A2", 5),
+               ("N_PROVENANCE_ELEMENTS", 6)])
 
     def __init__(
-            self, data, fs, n_channels, seq_size, profile=False):
+            self, data, fs, n_channels, seq_size, time_scale_factor,
+            profile=False):
         """ constructor for OME vertex
         
         :param data: the input data
@@ -97,11 +115,58 @@ class OMEMachineVertex(
         self._data_size = (
             (len(self._data) * DataType.FLOAT_64.size) + DataType.UINT32.size)
 
+        # write timer period
+        self._timer_period = (
+            (1e6 * self._seq_size / self._fs) * time_scale_factor)
+
         # calculate stapes hpf coefficients
         wn = 1.0 / self._fs * 2.0 * 700.0
 
         # noinspection PyTypeChecker
         [self._shb, self._sha] = sig.butter(2, wn, 'high')
+
+    @property
+    @overrides(ProvidesProvenanceDataFromMachineImpl._provenance_region_id)
+    def _provenance_region_id(self):
+        return self.REGIONS.PROVENANCE.value
+
+    @property
+    @overrides(ProvidesProvenanceDataFromMachineImpl._n_additional_data_items)
+    def _n_additional_data_items(self):
+        return self.EXTRA_PROVENANCE_DATA_ENTRIES.N_PROVENANCE_ELEMENTS.value
+
+    @overrides(ProvidesProvenanceDataFromMachineImpl.
+               get_provenance_data_from_machine)
+    def get_provenance_data_from_machine(self, transceiver, placement):
+        provenance_data = self._read_provenance_data(transceiver, placement)
+        provenance_items = self._read_basic_provenance_items(
+            provenance_data, placement)
+        provenance_data = self._get_remaining_provenance_data_items(
+            provenance_data)
+
+        b0 = provenance_data[self.EXTRA_PROVENANCE_DATA_ENTRIES.B0.value]
+        b1 = provenance_data[self.EXTRA_PROVENANCE_DATA_ENTRIES.B1.value]
+        b2 = provenance_data[self.EXTRA_PROVENANCE_DATA_ENTRIES.B2.value]
+        a0 = provenance_data[self.EXTRA_PROVENANCE_DATA_ENTRIES.A0.value]
+        a1 = provenance_data[self.EXTRA_PROVENANCE_DATA_ENTRIES. A1.value]
+        a2 = provenance_data[self.EXTRA_PROVENANCE_DATA_ENTRIES.A2.value]
+
+        label, x, y, p, names = self._get_placement_details(placement)
+
+        # translate into provenance data items
+        provenance_items.append(
+            ProvenanceDataItem(self._add_name(names, "b0"), b0))
+        provenance_items.append(
+            ProvenanceDataItem(self._add_name(names, "b1"), b1))
+        provenance_items.append(
+            ProvenanceDataItem(self._add_name(names, "b2"), b2))
+        provenance_items.append(
+            ProvenanceDataItem(self._add_name(names, "a0"), a0))
+        provenance_items.append(
+            ProvenanceDataItem(self._add_name(names, "a1"), a1))
+        provenance_items.append(
+            ProvenanceDataItem(self._add_name(names, "a2"), a2))
+        return provenance_items
 
     @property
     def n_data_points(self):
@@ -120,6 +185,9 @@ class OMEMachineVertex(
         sdram += self._N_FILTER_COEFFS_BYTES
         # profile
         sdram += self._profile_size()
+        # provenance region
+        sdram += self.get_provenance_data_size(
+            self.EXTRA_PROVENANCE_DATA_ENTRIES.N_PROVENANCE_ELEMENTS.value)
 
         resources = ResourceContainer(
             dtcm=DTCMResource(0),
@@ -165,14 +233,17 @@ class OMEMachineVertex(
         spec.reserve_memory_region(
             self.REGIONS.DATA.value, self._data_size, "data region")
 
+        # reserve provenance data region
+        self.reserve_provenance_data_region(spec)
+
+        # reserve profiler region
         self._reserve_profile_memory_regions(spec)
 
-    def _write_params(self, spec, routing_info, time_scale_factor):
+    def _write_params(self, spec, routing_info):
         """ write the basic params region
         
         :param spec:  data spec
         :param routing_info: the keys holder
-        :param time_scale_factor: the time scale factor
         :rtype: None 
         """
 
@@ -188,9 +259,6 @@ class OMEMachineVertex(
         data_key = routing_info.get_first_key_from_pre_vertex(
             self, self.OME_PARTITION_ID)
         spec.write_value(data_key)
-
-        # write timer period
-        spec.write_value((1e6 * self._seq_size / self._fs) * time_scale_factor)
 
         # Write dt
         spec.write_value(1.0 / self._fs, DataType.FLOAT_64)
@@ -244,9 +312,10 @@ class OMEMachineVertex(
         # simulation.c requirements
         spec.switch_write_focus(self.REGIONS.SYSTEM.value)
         spec.write_array(simulation_utilities.get_simulation_header_array(
-            self.get_binary_file_name(), machine_time_step, time_scale_factor))
+            self.get_binary_file_name(), machine_time_step, time_scale_factor,
+            self._timer_period))
 
-        self._write_params(spec, routing_info, time_scale_factor)
+        self._write_params(spec, routing_info)
         self._write_filter_coeffs(spec)
         self._write_input_data(spec)
         self._write_profile_dsg(spec)
