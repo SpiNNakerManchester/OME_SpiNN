@@ -48,7 +48,6 @@ uint moc_buffer_index = 0;
 uint moc_i = 0;
 uint moc_write_switch = 0;
 uint moc_sample_count = 0;
-bool app_complete = false;
 
 double moc;
 double moc_now_1;
@@ -93,10 +92,16 @@ uint32_t moc_seg_output_n_bytes;
 uint is_recording;
 uint32_t recording_flags;
 
-// simulation interface demands
+// ****************** simulation interface demands *************//
+
+//! \brief the number of ticks done so far
 static uint32_t simulation_ticks = 0;
+
+//! \brief time to reach
 uint32_t time;
-uint32_t time_pointer;
+
+//! \brief infinite run pointer
+static uint32_t infinite_run;
 
 //! \brief interface for getting the weight for a given synapse type
 //! \param[in] synapse_type_index the synapse type (e.g. exc. or inh.)
@@ -293,19 +298,6 @@ uint process_chan(
 //! \param[in] null_a: forced by api
 //! \param[in] null_b: forced by api
 //! \return none
-void app_end(uint null_a, uint null_b) {
-    use(null_a);
-	use(null_b);
-
-    recording_finalise();
-    app_complete = true;
-    simulation_ready_to_read();
-}
-
-//! \brief write data to sdram edge
-//! \param[in] null_a: forced by api
-//! \param[in] null_b: forced by api
-//! \return none
 void process_handler(uint null_a, uint null_b) {
     use(null_a);
 	use(null_b);
@@ -410,13 +402,21 @@ void data_read(uint mc_key, uint payload) {
 //! \return none
 void count_ticks(uint null_a, uint null_b) {
     use(null_a);
-	use(null_b);
+    use(null_b);
 
     time++;
-    moc_spike_weight = 0;
-    if (time > simulation_ticks && !app_complete){
-        spin1_schedule_callback(
-            app_end, DRNL_FILLER_ARG, DRNL_FILLER_ARG, APP_END_PRIORITY);
+    // If a fixed number of simulation ticks are specified and these have passed
+    if (infinite_run != TRUE && time >= simulation_ticks) {
+
+        // handle the pause and resume functionality
+        simulation_handle_pause_resume(NULL);
+
+         // Subtract 1 from the time so this tick gets done again on the next
+        // run
+        time -= 1;
+        recording_finalise();
+        simulation_ready_to_read();
+        return;
     }
 }
 
@@ -436,7 +436,7 @@ static inline bool app_init(uint32_t *timer_period) {
     if (!simulation_initialise(
             data_specification_get_region(SYSTEM, data_address),
             APPLICATION_NAME_HASH, timer_period, &simulation_ticks,
-            NULL, &time_pointer, SDP_PRIORITY, DMA_TRANSFER_DONE_PRIORITY)) {
+            &infinite_run, &time, SDP_PRIORITY, DMA_TRANSFER_DONE_PRIORITY)) {
         return false;
     }
 
@@ -448,7 +448,7 @@ static inline bool app_init(uint32_t *timer_period) {
     if (parameters.is_recording) {
         if (!recording_initialize(
                 data_specification_get_region(RECORDING, data_address),
-                &recording_flags)()) {
+                &recording_flags)) {
             log_error("failed to set up recording");
             return false;
         }
