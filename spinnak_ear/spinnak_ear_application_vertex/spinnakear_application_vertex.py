@@ -402,7 +402,8 @@ class SpiNNakEarApplicationVertex(
         # build the ome machine vertex
         ome_vertex = OMEMachineVertex(
             self._model.audio_input, self._model.fs, self._model.n_channels,
-            self._model.seq_size, profile=self._profile)
+            self._model.seq_size, self._time_scale_factor,
+            profile=self._profile)
 
         # allocate resources and updater graphs
         new_lo_atom = self._add_to_graph_components(
@@ -584,7 +585,7 @@ class SpiNNakEarApplicationVertex(
                     partition_id = IHCANMachineVertex.IHCAN_PARTITION_ID
                     if isinstance(child_vert, ANGroupMachineVertex):
                         partition_id = \
-                            ANGroupMachineVertex.AN_GROUP_PARTITION_IDENTIFER
+                            ANGroupMachineVertex.AN_GROUP_PARTITION_IDENTIFIER
 
                     # add edge and mapping
                     mc_edge = SpiNNakEarMachineEdge(child_vert, ag_vertex)
