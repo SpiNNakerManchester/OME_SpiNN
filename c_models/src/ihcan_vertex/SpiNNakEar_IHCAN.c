@@ -495,7 +495,7 @@ void count_ticks(uint null_a, uint null_b) {
     }
 }
 
-void _store_provenance_data(address_t provenance_region){
+void _store_provenance_data(address_t provenance_region) {
     log_debug("writing other provenance data");
 
     // store the data into the provenance data region
