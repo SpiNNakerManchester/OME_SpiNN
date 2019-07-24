@@ -41,6 +41,8 @@ import numpy
 import logging
 import math
 
+from spynnaker.pyNN.utilities import bit_field_utilities
+
 logger = FormatAdapter(logging.getLogger(__name__))
 
 
@@ -83,12 +85,15 @@ class DRNLMachineVertex(
 
     # The number of bytes for the parameters
     # 1: n data points, 2: data key, 3: ome data key,
-    # 4: recording flag, 5: seq size, 6:n buffers in sdram, 7. n synapse types
-    # 8. moc_resample_factor, 9&10. moc_dec1, 11&12. moc_dec_2,
-    # 13&14. moc_dec_3, 15,16 moc_factor_1, 17,18 ctbm, 19,20 recip_ctbm
-    # 21,22 disp_thresh
-    _N_PARAMS = 22
+    # 4: seq size, 5:n buffers in sdram, 6. n synapse types
+    # 7. moc_resample_factor,
+    _N_PARAMS = 7
     _N_PARAMETER_BYTES = _N_PARAMS * BYTES_PER_WORS
+
+    # 1 moc_dec1, 2. moc_dec_2, 3 moc_dec_3, 4 moc_factor_1, 5 ctbm,
+    # 6 recip_ctbm 7 disp_thresh
+    _N_DOUBLE_PARAMS = 7
+    _N_DOUBLE_PARAMS_BYTES = _N_DOUBLE_PARAMS * DataType.FLOAT_64.size
 
     # sdram edge address in sdram
     # 1. address, 2. size. 3. double elements
@@ -99,8 +104,7 @@ class DRNLMachineVertex(
     N_FILTER_PARAMS = 8
 
     # n bytes for filter param region
-    FILTER_PARAMS_IN_BYTES = (
-        N_FILTER_PARAMS * constants.WORD_TO_BYTE_MULTIPLIER)
+    FILTER_PARAMS_IN_BYTES = N_FILTER_PARAMS * DataType.FLOAT_64.size
 
     # moc recording id
     MOC_RECORDING_REGION_ID = 0
@@ -124,16 +128,19 @@ class DRNLMachineVertex(
         value="REGIONS",
         names=[('SYSTEM', 0),
                ('PARAMETERS', 1),
-               ('FILTER_PARAMS', 2),
-               ('RECORDING', 3),
-               ('PROFILE', 4),
-               ('SDRAM_EDGE_ADDRESS', 5),
-               ('SYNAPSE_PARAMS', 6),
-               ('POPULATION_TABLE', 7),
-               ('SYNAPTIC_MATRIX', 8),
-               ('SYNAPSE_DYNAMICS', 9),
-               ('CONNECTOR_BUILDER', 10),
-               ('DIRECT_MATRIX', 11)])
+               ('DOUBLE_PARAMS', 2),
+               ('FILTER_PARAMS', 3),
+               ('RECORDING', 4),
+               ('PROFILE', 5),
+               ('SDRAM_EDGE_ADDRESS', 6),
+               ('SYNAPSE_PARAMS', 7),
+               ('POPULATION_TABLE', 8),
+               ('SYNAPTIC_MATRIX', 9),
+               ('SYNAPSE_DYNAMICS', 10),
+               ('CONNECTOR_BUILDER', 11),
+               ('DIRECT_MATRIX', 12),
+               ('BIT_FIELD_FILTER', 13),
+               ('BIT_FIELD_BUILDER', 14)])
 
     def __init__(
             self, cf, fs, n_data_points, drnl_index, is_recording,
@@ -276,19 +283,26 @@ class DRNLMachineVertex(
         sdram = constants.SYSTEM_BYTES_REQUIREMENT
         # sdram edge address store
         sdram += (self.SDRAM_EDGE_ADDRESS_SIZE_IN_WORDS
-                  *constants.WORD_TO_BYTE_MULTIPLIER)
+                  * constants.WORD_TO_BYTE_MULTIPLIER)
+        # bitfields builder region
+        sdram += bit_field_utilities.get_estimated_sdram_for_builder_region(
+            graph, self)
+        # bitfield region
+        sdram += bit_field_utilities.get_estimated_sdram_for_bit_field_region(
+            graph, self)
         # the actual size needed by sdram edge
         sdram += self._sdram_edge_size
         # filter params
         sdram += self.FILTER_PARAMS_IN_BYTES
         # params
         sdram += self._N_PARAMETER_BYTES
+        # double params
+        sdram += self._N_DOUBLE_PARAMS_BYTES
         # profile
         sdram += self._profile_size()
         # recording
         sdram += self._recording_size
         # synapses
-
         sdram += self._synapse_manager.get_sdram_usage_in_bytes(
             Slice(self._drnl_index, self._drnl_index + 1),
             graph.get_edges_ending_at_vertex(self._parent),  machine_time_step)
@@ -312,11 +326,15 @@ class DRNLMachineVertex(
     def get_n_keys_for_partition(self, partition, graph_mapper):
         return 1
 
-    def _reserve_memory_regions(self, spec):
-        """
+    def _reserve_memory_regions(
+            self, spec, machine_graph, graph_mapper, vertex):
+        """ reserve memory regions
         
-        :param spec: 
-        :return: 
+        :param spec: spec
+        :param machine_graph: machine graph
+        :param graph_mapper: graph mapper
+        :param vertex: machine vertex
+        :rtype: None 
         """
 
         # reserve system region
@@ -328,20 +346,33 @@ class DRNLMachineVertex(
         spec.reserve_memory_region(
             self.REGIONS.PARAMETERS.value, self._N_PARAMETER_BYTES, "params")
 
+        # Reserve the double params region
+        spec.reserve_memory_region(
+            self.REGIONS.DOUBLE_PARAMS.value, self._N_DOUBLE_PARAMS_BYTES,
+            "double params")
+
         # reserve recording region
         spec.reserve_memory_region(
             self.REGIONS.RECORDING.value,
             recording_utilities.get_recording_header_size(1),
             "recording")
 
+        # sdram edge addresses
         spec.reserve_memory_region(
             self.REGIONS.SDRAM_EDGE_ADDRESS.value,
             (self.SDRAM_EDGE_ADDRESS_SIZE_IN_WORDS *
              constants.WORD_TO_BYTE_MULTIPLIER), "sdram edge address")
 
+        # filter param regions
         spec.reserve_memory_region(
             self.REGIONS.FILTER_PARAMS.value,
             self.FILTER_PARAMS_IN_BYTES, "filter params")
+
+        # bitfields region
+        bit_field_utilities.reserve_bit_field_regions(
+            spec, machine_graph, graph_mapper, vertex,
+            self.REGIONS.BIT_FIELD_BUILDER.value,
+            self.REGIONS.BIT_FIELD_FILTER.value)
 
         # handle profile stuff
         self._reserve_profile_memory_regions(spec)
@@ -367,14 +398,8 @@ class DRNLMachineVertex(
         # Write the key
         spec.write_value(self._get_data_key(routing_info))
 
-        # Write the sampling frequency
-        spec.write_value(self._fs)
-
         # write the OME data key
         spec.write_value(ome_data_key)
-
-        # write is recording
-        spec.write_value(int(self._is_recording))
 
         # write seq size
         spec.write_value(self._seq_size)
@@ -387,6 +412,15 @@ class DRNLMachineVertex(
 
         # write moc resample factor
         spec.write_value(self._fs / 1000.0)
+
+    def _write_double_params_region(self, spec):
+        """
+        
+        :param spec: 
+        :return: 
+        """
+
+        spec.switch_write_focus(self.REGIONS.DOUBLE_PARAMS.value)
 
         # moc dec 1
         dt = 1.0 / self._fs
@@ -423,6 +457,8 @@ class DRNLMachineVertex(
         :param machine_graph: 
         :return: 
         """
+
+        spec.switch_write_focus(self.REGIONS.SDRAM_EDGE_ADDRESS.value)
         for edge in machine_graph.get_edges_starting_at_vertex(self):
             partition = machine_graph.get_outgoing_partition_for_edge(edge)
             if (isinstance(partition, AbstractSDRAMPartition) and
@@ -452,21 +488,22 @@ class DRNLMachineVertex(
         "routing_info": "MemoryRoutingInfos",
         "placements": "MemoryPlacements",
         "tags": "MemoryTags",
-        "graph_mapper": "MemoryGraphMapper"
+        "graph_mapper": "MemoryGraphMapper",
+        "n_key_map": "MemoryMachinePartitionNKeysMap"
     })
     @overrides(
         AbstractGeneratesDataSpecification.generate_data_specification,
         additional_arguments=[
             "machine_time_step", "time_scale_factor", "machine_graph",
             "routing_info", "placements", "tags", "graph_mapper",
-            "application_graph"])
+            "application_graph", "n_key_map"])
     def generate_data_specification(
             self, spec, placement, machine_time_step, time_scale_factor,
             machine_graph, routing_info, placements, tags, graph_mapper,
-            application_graph):
+            application_graph, n_key_map):
 
         # reserve regions
-        self._reserve_memory_regions(spec)
+        self._reserve_memory_regions(spec, machine_graph, graph_mapper, self)
 
         # simulation.c requirements
         spec.switch_write_focus(self.REGIONS.SYSTEM.value)
@@ -477,6 +514,9 @@ class DRNLMachineVertex(
         # params
         self._write_param_region(spec, machine_graph, routing_info)
 
+        # float params
+        self._write_double_params_region(spec)
+
         # write the filter params
         self._write_filter_params(spec)
 
@@ -485,6 +525,11 @@ class DRNLMachineVertex(
 
         # only write params if used
         self._write_profile_dsg(spec)
+
+        # write up the bitfield builder data
+        bit_field_utilities.write_bitfield_init_data(
+            spec, self, machine_graph, routing_info,
+            n_key_map, self.REGIONS.BIT_FIELD_BUILDER.value)
 
         # Write the recording regions
         spec.switch_write_focus(self.REGIONS.RECORDING.value)

@@ -6,7 +6,7 @@
 
 //! \brief params region data format
 typedef struct parameters_struct{
-    int total_ticks;
+    uint32_t total_ticks;
     int seg_size;
     uint key;
     REAL dt;

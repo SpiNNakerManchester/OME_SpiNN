@@ -21,7 +21,7 @@
 #include "neuron/direct_synapses.c"
 #include "neuron/plasticity/synapse_dynamics_static_impl.c"
 #include "neuron/structural_plasticity/synaptogenesis_dynamics_static_impl.c"
-
+#include "neuron/bit_field_filter.h"
 
 //#define PROFILE
 
@@ -29,6 +29,9 @@
 
 // params from the params region
 parameters_struct parameters;
+
+// params from the float params region
+double_parameters_struct double_params;
 
 // params from the filter params region
 filter_params_struct filter_params;
@@ -89,7 +92,6 @@ double moc_spike_weight = 0;
 uint32_t moc_seg_output_n_bytes;
 
 // recording interface demands
-uint is_recording;
 uint32_t recording_flags;
 
 // ****************** simulation interface demands *************//
@@ -162,8 +164,12 @@ void data_write(uint arg_1, uint arg_2)
 		        dtcm_buffer_moc=dtcm_buffer_moc_y;
 		    }
 
-            recording_record(
-                MOC_RECORDING_REGION, dtcm_buffer_moc, moc_seg_output_n_bytes);
+            if (recording_is_channel_enabled(
+                    recording_flags, MOC_RECORDING_REGION)){
+                recording_record(
+                    MOC_RECORDING_REGION, dtcm_buffer_moc,
+                    moc_seg_output_n_bytes);
+            }
 
             //flip moc_write buffers
             moc_write_switch = !moc_write_switch;
@@ -249,13 +255,13 @@ uint process_chan(
 		//stage 2
 		double abs_x = absolute_value(non_linout_2a);
         double compressed_non_lin = 0.0;
-		if (abs_x < parameters.disp_thresh) {
+		if (abs_x < double_params.disp_thresh) {
 			compressed_non_lin = A * non_linout_2a;
 		}
 		else {
 			compressed_non_lin =
-			    find_sign(non_linout_2a) * parameters.ctbm * (double) expk(
-			        C * logk((accum)(A * (abs_x * parameters.receip_ctbm))));
+			    find_sign(non_linout_2a) * double_params.ctbm * (double) expk(
+			        C * logk((accum)(A * (abs_x * double_params.receip_ctbm))));
 		}
 
 		//stage 3
@@ -440,18 +446,22 @@ static inline bool app_init(uint32_t *timer_period) {
         return false;
     }
 
+    // get params
     spin1_memcpy(
         &parameters, data_specification_get_region(PARAMS, data_address),
         sizeof(parameters_struct));
 
-    log_info("is rec:%d", parameters.is_recording);
-    if (parameters.is_recording) {
-        if (!recording_initialize(
-                data_specification_get_region(RECORDING, data_address),
-                &recording_flags)) {
-            log_error("failed to set up recording");
-            return false;
-        }
+    // get double params
+    spin1_memcpy(
+        &double_params,
+        data_specification_get_region(DOUBLE_PARAMS, data_address),
+        sizeof(double_parameters_struct));
+
+    if (!recording_initialize(
+            data_specification_get_region(RECORDING, data_address),
+            &recording_flags)) {
+        log_error("failed to set up recording");
+        return false;
     }
 
     log_info("moc resample factor =%d\n",  parameters.moc_resample_factor);
@@ -550,11 +560,11 @@ static inline bool app_init(uint32_t *timer_period) {
 	moc_now_2 = 0.0;
 	moc_now_4 = 0.0;
 
-    moc_dec_1 = parameters.moc_dec_1;
-    moc_dec_2 = parameters.moc_dec_2;
-    moc_dec_3 = parameters.moc_dec_3;
+    moc_dec_1 = double_params.moc_dec_1;
+    moc_dec_2 = double_params.moc_dec_2;
+    moc_dec_3 = double_params.moc_dec_3;
 
-    moc_factor_1 = parameters.moc_factor_1;
+    moc_factor_1 = double_params.moc_factor_1;
     moc_factor_2 = 0.0;
     moc_factor_3 = 0.0;
 
@@ -584,6 +594,7 @@ static inline bool app_init(uint32_t *timer_period) {
         return false;
     }
 
+
     // Set up the synapse dynamics
     address_t synapse_dynamics_region_address =
         data_specification_get_region(SYNAPSE_DYNAMICS, data_address);
@@ -597,6 +608,13 @@ static inline bool app_init(uint32_t *timer_period) {
             INCOMING_SPIKE_BUFFER_SIZE)) {
         return false;
     }
+
+    log_info("initialising the bit field region");
+    if (!bit_field_filter_initialise(
+            data_specification_get_region(BIT_FIELD_FILTER, data_address))){
+        return false;
+    }
+
 
 #ifdef PROFILE
     profiler_init(data_specification_get_region(PROFILER, data_address));

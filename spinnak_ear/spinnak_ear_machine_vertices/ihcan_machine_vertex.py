@@ -445,7 +445,7 @@ class IHCANMachineVertex(
     def get_n_keys_for_partition(self, partition, graph_mapper):
         return self._n_atoms
 
-    def _fill_in_sdram_edge_region(self, spec, routing_info, machine_graph):
+    def _fill_in_sdram_edge_region(self, spec, machine_graph):
         sdram_partition = None
         for edge in machine_graph.get_edges_ending_at_vertex(self):
             if isinstance(edge.pre_vertex, DRNLMachineVertex):
@@ -635,7 +635,7 @@ class IHCANMachineVertex(
         self._fill_in_seed_region(spec)
 
         # fill in the sdram edge data region
-        self._fill_in_sdram_edge_region(spec, routing_info, machine_graph)
+        self._fill_in_sdram_edge_region(spec, machine_graph)
 
         # Write the recording regions
         spec.switch_write_focus(self.REGIONS.RECORDING.value)

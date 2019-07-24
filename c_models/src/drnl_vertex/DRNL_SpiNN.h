@@ -7,6 +7,7 @@
 typedef enum regions {
     SYSTEM,
     PARAMS,
+    DOUBLE_PARAMS,
     FILTER_PARAMS,
     RECORDING,
     PROFILER,
@@ -16,7 +17,9 @@ typedef enum regions {
     SYNAPTIC_MATRIX,
     SYNAPSE_DYNAMICS,
     CONNECTOR_BUILDER,
-    DIRECT_MATRIX
+    DIRECT_MATRIX,
+    BIT_FIELD_FILTER,
+    BIT_FIELD_BUILDER
 } regions;
 
 typedef enum priorities {
@@ -70,11 +73,14 @@ typedef struct parameters_struct{
    int data_size;
    uint key;
    uint ome_data_key;
-   int is_recording;
    int seq_size;
    int n_buffers_in_sdram;
    int n_synapse_types;
    uint moc_resample_factor;
+} parameters_struct;
+
+// params from the parameter region in sdram
+typedef struct double_parameters_struct{
    double moc_dec_1;
    double moc_dec_2;
    double moc_dec_3;
@@ -82,7 +88,7 @@ typedef struct parameters_struct{
    double ctbm;
    double receip_ctbm;
    double disp_thresh;
-} parameters_struct;
+} double_parameters_struct;
 
 // params from the filter params region in sdram
 typedef struct filter_params_struct{

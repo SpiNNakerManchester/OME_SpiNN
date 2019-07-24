@@ -77,7 +77,7 @@ REAL past_stapes[2];
 // *************** SIM PARAMS **************** //
 
 //! \brief what tick we're on
-int read_ticks = 0;
+uint32_t read_ticks = 0;
 
 //! \brief infinite run pointer
 static uint32_t infinite_run;
@@ -157,7 +157,7 @@ void data_read(uint unused_a, uint unused_b) {
 		    dtcm_buffer_in, DMA_READ, parameters.seg_size * sizeof(REAL));
 	}
    	// stop if desired number of ticks reached
-    else if (read_ticks >= parameters.total_ticks && !app_complete) {
+    else if (read_ticks >= parameters.total_ticks) {
         simulation_handle_pause_resume(NULL);
         #ifdef PROFILE
             profiler_write_entry_disable_irq_fiq(
@@ -294,7 +294,7 @@ bool app_init(uint32_t *timer_period)
     // Get the timing details and set up the simulation interface
     if (!simulation_initialise(
             data_specification_get_region(SYSTEM, data_address),
-            APPLICATION_NAME_HASH, timer_period, &simulation_ticks,
+            APPLICATION_NAME_HASH, timer_period, &read_ticks,
             &infinite_run, &time,
             SDP_PRIORITY, DMA_TRANSFER_DONE_PRIORITY)) {
         return false;
