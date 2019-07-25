@@ -25,7 +25,7 @@
 uint32_t spike_count = 0;
 
 //! \brief the key map
-static key_map_struct *key_mask_table;
+static key_map_struct key_mask_table;
 
 //! \brief params
 static params_struct parameters;
@@ -56,7 +56,7 @@ void key_search_and_send(uint spike, uint null_a) {
     key_mask_table_entry entry;
     while (imin < imax) {
         imid = (imax + imin) >> 1;
-        entry = key_mask_table->entries[imid];
+        entry = key_mask_table.entries[imid];
         if ((spike & entry.mask) == entry.key){
             int neuron_id = entry.offset + (spike & ~entry.mask);
             if(neuron_id >= parameters.n_atoms){
@@ -165,21 +165,21 @@ bool app_init(uint32_t *timer_period) {
 
     // read in array of keys
     log_info("n_ihc_key_bytes = %d", n_ihc_key_bytes);
-    key_mask_table = (key_map_struct*) spin1_malloc(n_ihc_key_bytes);
-    if (key_mask_table == NULL) {
+    key_mask_table.entries = spin1_malloc(n_ihc_key_bytes);
+    if (key_mask_table.entries == NULL) {
         log_error("failed to allocate memory");
         return false;
     }
     spin1_memcpy(
-        key_mask_table,  data_specification_get_region(KEY_MAP, data_address),
-        n_ihc_key_bytes);
+        key_mask_table.entries,
+        data_specification_get_region(KEY_MAP, data_address), n_ihc_key_bytes);
 
     // print key array
     for (int i = 0; i < parameters.n_children; i++) {
         log_info(
             "ihc key:0x%x mask:0x%x offset:%d",
-            key_mask_table->entries[i].key, key_mask_table->entries[i].mask,
-            key_mask_table->entries[i].offset);
+            key_mask_table.entries[i].key, key_mask_table.entries[i].mask,
+            key_mask_table.entries[i].offset);
     }
 
     // sort out provenance data
