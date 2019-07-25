@@ -19,7 +19,8 @@ typedef enum regions {
     CONNECTOR_BUILDER,
     DIRECT_MATRIX,
     BIT_FIELD_FILTER,
-    BIT_FIELD_BUILDER
+    BIT_FIELD_BUILDER,
+    BIT_FIELD_KEY_MAP
 } regions;
 
 typedef enum priorities {

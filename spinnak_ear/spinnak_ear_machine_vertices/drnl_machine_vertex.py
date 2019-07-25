@@ -9,6 +9,9 @@ from pacman.model.resources.cpu_cycles_per_tick_resource \
     import CPUCyclesPerTickResource
 from pacman.model.decorators.overrides import overrides
 from pacman.executor.injection_decorator import inject_items
+from spinn_front_end_common.abstract_models import \
+    AbstractSupportsBitFieldGeneration, \
+    AbstractSupportsBitFieldRoutingCompression
 
 from spinn_utilities.log import FormatAdapter
 
@@ -50,7 +53,8 @@ class DRNLMachineVertex(
         MachineVertex, AbstractHasAssociatedBinary,
         AbstractGeneratesDataSpecification,
         AbstractProvidesNKeysForPartition, AbstractEarProfiled,
-        AbstractReceiveBuffersToHost):
+        AbstractReceiveBuffersToHost, AbstractSupportsBitFieldGeneration,
+        AbstractSupportsBitFieldRoutingCompression):
 
     """ A vertex that runs the DRNL algorithm
     """
@@ -72,7 +76,9 @@ class DRNLMachineVertex(
         "_seq_size",
         "_synapse_manager",
         "_parent",
-        "_n_buffers_in_sdram_total"
+        "_n_buffers_in_sdram_total",
+        "__on_chip_generatable_area",
+        "__on_chip_generatable_size"
     ]
 
     FAIL_TO_RECORD_MESSAGE = (
@@ -140,7 +146,8 @@ class DRNLMachineVertex(
                ('CONNECTOR_BUILDER', 11),
                ('DIRECT_MATRIX', 12),
                ('BIT_FIELD_FILTER', 13),
-               ('BIT_FIELD_BUILDER', 14)])
+               ('BIT_FIELD_BUILDER', 14),
+               ('BIT_FIELD_KEY_MAP', 15)])
 
     def __init__(
             self, cf, fs, n_data_points, drnl_index, is_recording,
@@ -165,6 +172,10 @@ class DRNLMachineVertex(
             self, label="DRNL Node of {}".format(drnl_index), constraints=None)
         AbstractEarProfiled.__init__(self, profile, self.REGIONS.PROFILE.value)
         AbstractProvidesNKeysForPartition.__init__(self)
+
+        # storage for the synapse manager locations
+        self.__on_chip_generatable_offset = None
+        self.__on_chip_generatable_size = None
 
         self._cf = cf
         self._fs = fs
@@ -192,6 +203,35 @@ class DRNLMachineVertex(
 
         # filter params
         self._filter_params = self._calculate_filter_parameters()
+
+    @overrides(AbstractSupportsBitFieldRoutingCompression.
+               key_to_atom_map_region_base_address)
+    def key_to_atom_map_region_base_address(self, transceiver, placement):
+        return helpful_functions.locate_memory_region_for_placement(
+            placement=placement, transceiver=transceiver,
+            region=self.REGIONS.BIT_FIELD_KEY_MAP.value)
+
+    @overrides(AbstractSupportsBitFieldGeneration.bit_field_builder_region)
+    def bit_field_builder_region(self, transceiver, placement):
+        return helpful_functions.locate_memory_region_for_placement(
+            placement=placement, transceiver=transceiver,
+            region=self.REGIONS.BIT_FIELD_BUILDER.value)
+
+    @overrides(AbstractSupportsBitFieldRoutingCompression.
+               regeneratable_sdram_blocks_and_sizes)
+    def regeneratable_sdram_blocks_and_sizes(self, transceiver, placement):
+        base_address = \
+            helpful_functions.locate_memory_region_for_placement(
+                placement=placement, transceiver=transceiver,
+                region=self.REGIONS.SYNAPTIC_MATRIX.value)
+        return [(base_address + self.__on_chip_generatable_offset,
+                 self.__on_chip_generatable_size)]
+
+    @overrides(AbstractSupportsBitFieldGeneration.bit_field_base_address)
+    def bit_field_base_address(self, transceiver, placement):
+        return helpful_functions.locate_memory_region_for_placement(
+            placement=placement, transceiver=transceiver,
+            region=self.REGIONS.BIT_FIELD_FILTER.value)
 
     @property
     def sdram_edge_size(self):
@@ -284,12 +324,15 @@ class DRNLMachineVertex(
         # sdram edge address store
         sdram += (self.SDRAM_EDGE_ADDRESS_SIZE_IN_WORDS
                   * constants.WORD_TO_BYTE_MULTIPLIER)
-        # bitfields builder region
-        sdram += bit_field_utilities.get_estimated_sdram_for_builder_region(
-            graph, self)
-        # bitfield region
+
+        # bitfields bitfield region
         sdram += bit_field_utilities.get_estimated_sdram_for_bit_field_region(
             graph, self)
+        # bitfield key map region
+        sdram += bit_field_utilities.get_estimated_sdram_for_key_region(
+            graph, self)
+        # bitfield builder region
+        sdram += bit_field_utilities.exact_sdram_for_bit_field_builder_region()
         # the actual size needed by sdram edge
         sdram += self._sdram_edge_size
         # filter params
@@ -327,12 +370,12 @@ class DRNLMachineVertex(
         return 1
 
     def _reserve_memory_regions(
-            self, spec, machine_graph, graph_mapper, vertex):
+            self, spec, machine_graph, n_key_map, vertex):
         """ reserve memory regions
         
         :param spec: spec
         :param machine_graph: machine graph
-        :param graph_mapper: graph mapper
+        :param n_key_map: map between partitions and n keys
         :param vertex: machine vertex
         :rtype: None 
         """
@@ -370,9 +413,10 @@ class DRNLMachineVertex(
 
         # bitfields region
         bit_field_utilities.reserve_bit_field_regions(
-            spec, machine_graph, graph_mapper, vertex,
+            spec, machine_graph, n_key_map, vertex,
             self.REGIONS.BIT_FIELD_BUILDER.value,
-            self.REGIONS.BIT_FIELD_FILTER.value)
+            self.REGIONS.BIT_FIELD_FILTER.value,
+            self.REGIONS.BIT_FIELD_KEY_MAP.value)
 
         # handle profile stuff
         self._reserve_profile_memory_regions(spec)
@@ -503,7 +547,7 @@ class DRNLMachineVertex(
             application_graph, n_key_map):
 
         # reserve regions
-        self._reserve_memory_regions(spec, machine_graph, graph_mapper, self)
+        self._reserve_memory_regions(spec, machine_graph, n_key_map, self)
 
         # simulation.c requirements
         spec.switch_write_focus(self.REGIONS.SYSTEM.value)
@@ -529,7 +573,12 @@ class DRNLMachineVertex(
         # write up the bitfield builder data
         bit_field_utilities.write_bitfield_init_data(
             spec, self, machine_graph, routing_info,
-            n_key_map, self.REGIONS.BIT_FIELD_BUILDER.value)
+            n_key_map, self.REGIONS.BIT_FIELD_BUILDER.value,
+            self.REGIONS.POPULATION_TABLE.value,
+            self.REGIONS.SYNAPTIC_MATRIX.value,
+            self.REGIONS.DIRECT_MATRIX.value,
+            self.REGIONS.BIT_FIELD_FILTER.value,
+            self.REGIONS.BIT_FIELD_KEY_MAP.value)
 
         # Write the recording regions
         spec.switch_write_focus(self.REGIONS.RECORDING.value)
@@ -548,6 +597,12 @@ class DRNLMachineVertex(
             self.REGIONS.DIRECT_MATRIX.value,
             self.REGIONS.SYNAPSE_DYNAMICS.value,
             self.REGIONS.CONNECTOR_BUILDER.value)
+
+        self.__on_chip_generatable_offset = \
+            self._synapse_manager.host_written_matrix_size
+
+        self.__on_chip_generatable_size = \
+            self._synapse_manager.on_chip_written_matrix_size
 
         # End the specification
         spec.end_specification()
