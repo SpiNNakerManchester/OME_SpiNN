@@ -129,8 +129,8 @@ class OMEMachineVertex(
         [self._shb, self._sha] = sig.butter(2, wn, 'high')
 
     @overrides(AbstractSupportsAutoPauseAndResume.my_local_time_period)
-    def my_local_time_period(self, simulator_time_step, time_scale_factor):
-        return self._timer_period * time_scale_factor
+    def my_local_time_period(self, simulator_time_step):
+        return self._timer_period
 
     @property
     @overrides(ProvidesProvenanceDataFromMachineImpl._provenance_region_id)
