@@ -12,6 +12,8 @@ from spinn_front_end_common.abstract_models.abstract_has_associated_binary \
 from spinn_front_end_common.abstract_models\
     .abstract_generates_data_specification \
     import AbstractGeneratesDataSpecification
+from spinn_front_end_common.abstract_models.impl.\
+    supports_auto_pause_and_resume import SupportsAutoPauseAndResume
 from spinn_front_end_common.interface.provenance import \
     ProvidesProvenanceDataFromMachineImpl
 from spinn_front_end_common.utilities.utility_objs import ExecutableType, \
@@ -29,7 +31,7 @@ from enum import Enum
 class ANGroupMachineVertex(
         MachineVertex, AbstractHasAssociatedBinary,
         AbstractGeneratesDataSpecification,
-        AbstractProvidesNKeysForPartition,
+        AbstractProvidesNKeysForPartition, SupportsAutoPauseAndResume,
         ProvidesProvenanceDataFromMachineImpl):
     """ A vertex that runs the multi-cast acknowledge algorithm
     """

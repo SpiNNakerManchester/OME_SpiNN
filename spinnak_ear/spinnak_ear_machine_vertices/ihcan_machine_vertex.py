@@ -15,6 +15,8 @@ from spinn_front_end_common.abstract_models.abstract_has_associated_binary \
 from spinn_front_end_common.abstract_models\
     .abstract_generates_data_specification \
     import AbstractGeneratesDataSpecification
+from spinn_front_end_common.abstract_models.impl.supports_auto_pause_and_resume import \
+    SupportsAutoPauseAndResume
 from spinn_front_end_common.interface.buffer_management.buffer_models\
     .abstract_receive_buffers_to_host import AbstractReceiveBuffersToHost
 from spinn_front_end_common.interface.provenance import \
@@ -44,7 +46,8 @@ class IHCANMachineVertex(
         AbstractGeneratesDataSpecification,
         AbstractProvidesNKeysForPartition,
         AbstractReceiveBuffersToHost,
-        AbstractEarProfiled, ProvidesProvenanceDataFromMachineImpl):
+        AbstractEarProfiled, ProvidesProvenanceDataFromMachineImpl,
+        SupportsAutoPauseAndResume):
     """ A vertex that runs the IHCAN algorithm
     """
 

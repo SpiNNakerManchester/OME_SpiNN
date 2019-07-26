@@ -12,6 +12,8 @@ from pacman.executor.injection_decorator import inject_items
 from spinn_front_end_common.abstract_models import \
     AbstractSupportsBitFieldGeneration, \
     AbstractSupportsBitFieldRoutingCompression
+from spinn_front_end_common.abstract_models.impl.\
+    supports_auto_pause_and_resume import SupportsAutoPauseAndResume
 
 from spinn_utilities.log import FormatAdapter
 
@@ -54,7 +56,7 @@ class DRNLMachineVertex(
         AbstractGeneratesDataSpecification,
         AbstractProvidesNKeysForPartition, AbstractEarProfiled,
         AbstractReceiveBuffersToHost, AbstractSupportsBitFieldGeneration,
-        AbstractSupportsBitFieldRoutingCompression):
+        AbstractSupportsBitFieldRoutingCompression, SupportsAutoPauseAndResume):
 
     """ A vertex that runs the DRNL algorithm
     """

@@ -14,6 +14,9 @@ from spinn_front_end_common.abstract_models.abstract_has_associated_binary \
 from spinn_front_end_common.abstract_models\
     .abstract_generates_data_specification \
     import AbstractGeneratesDataSpecification
+from spinn_front_end_common.abstract_models.\
+    abstract_supports_auto_pause_and_resume import \
+    AbstractSupportsAutoPauseAndResume
 from spinn_front_end_common.interface.provenance import \
     ProvidesProvenanceDataFromMachineImpl
 from spinn_front_end_common.utilities.utility_objs import ExecutableType, \
@@ -35,7 +38,7 @@ import scipy.signal as sig
 class OMEMachineVertex(
         MachineVertex, AbstractEarProfiled, AbstractHasAssociatedBinary,
         AbstractGeneratesDataSpecification,
-        AbstractProvidesNKeysForPartition,
+        AbstractProvidesNKeysForPartition, AbstractSupportsAutoPauseAndResume,
         ProvidesProvenanceDataFromMachineImpl):
     """ A vertex that runs the OME algorithm
     """
@@ -105,6 +108,7 @@ class OMEMachineVertex(
         MachineVertex.__init__(self, label="OME Node", constraints=None)
         AbstractProvidesNKeysForPartition.__init__(self)
         AbstractEarProfiled.__init__(self, profile, self.REGIONS.PROFILE.value)
+        AbstractSupportsAutoPauseAndResume.__init__(self)
 
         self._data = data
         self._fs = fs
@@ -116,14 +120,17 @@ class OMEMachineVertex(
             (len(self._data) * DataType.FLOAT_64.size) + DataType.UINT32.size)
 
         # write timer period
-        self._timer_period = (
-            (1e6 * self._seq_size / self._fs) * time_scale_factor)
+        self._timer_period = (1e6 * self._seq_size / self._fs)
 
         # calculate stapes hpf coefficients
         wn = 1.0 / self._fs * 2.0 * 700.0
 
         # noinspection PyTypeChecker
         [self._shb, self._sha] = sig.butter(2, wn, 'high')
+
+    @overrides(AbstractSupportsAutoPauseAndResume.my_local_time_period)
+    def my_local_time_period(self, simulator_time_step, time_scale_factor):
+        return self._timer_period * time_scale_factor
 
     @property
     @overrides(ProvidesProvenanceDataFromMachineImpl._provenance_region_id)
