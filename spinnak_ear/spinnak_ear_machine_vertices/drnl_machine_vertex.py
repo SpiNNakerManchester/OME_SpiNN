@@ -56,7 +56,8 @@ class DRNLMachineVertex(
         AbstractGeneratesDataSpecification,
         AbstractProvidesNKeysForPartition, AbstractEarProfiled,
         AbstractReceiveBuffersToHost, AbstractSupportsBitFieldGeneration,
-        AbstractSupportsBitFieldRoutingCompression, SupportsAutoPauseAndResume):
+        AbstractSupportsBitFieldRoutingCompression,
+        SupportsAutoPauseAndResume):
 
     """ A vertex that runs the DRNL algorithm
     """
