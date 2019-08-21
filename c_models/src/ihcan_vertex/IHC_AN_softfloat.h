@@ -1,12 +1,24 @@
 /*
- * IHC_AN.h
+ * Copyright (c) 2019-2020 The University of Manchester
  *
- *  Created on: 1 Nov 2016
- *      Author: rjames
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifndef IHC_AN_softfloat_H_
 #define IHC_AN_softfloat_H_
+
+#include "spin1_api.h"
 
 #define RDM_MAX UINT32_MAX + 1.0f
 #define R_MAX_RECIP 1.0f / RDM_MAX
@@ -117,7 +129,7 @@ typedef enum regions {
     INNER_EAR_PARAMS,
     DT_BASED_PARAMS,
     RANDOM_SEEDS,
-    RECORDING,
+    NEURON_RECORDING,
     SDRAM_EDGE_ADDRESS,
     PROFILER,
     PROVENANCE,

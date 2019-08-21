@@ -15,8 +15,8 @@ from spinn_front_end_common.abstract_models\
     .abstract_generates_data_specification \
     import AbstractGeneratesDataSpecification
 from spinn_front_end_common.abstract_models.\
-    abstract_supports_auto_pause_and_resume import \
-    AbstractSupportsAutoPauseAndResume
+    abstract_machine_supports_auto_pause_and_resume import \
+    AbstractMachineSupportsAutoPauseAndResume
 from spinn_front_end_common.interface.provenance import \
     ProvidesProvenanceDataFromMachineImpl
 from spinn_front_end_common.utilities.utility_objs import ExecutableType, \
@@ -38,7 +38,8 @@ import scipy.signal as sig
 class OMEMachineVertex(
         MachineVertex, AbstractEarProfiled, AbstractHasAssociatedBinary,
         AbstractGeneratesDataSpecification,
-        AbstractProvidesNKeysForPartition, AbstractSupportsAutoPauseAndResume,
+        AbstractProvidesNKeysForPartition,
+        AbstractMachineSupportsAutoPauseAndResume,
         ProvidesProvenanceDataFromMachineImpl):
     """ A vertex that runs the OME algorithm
     """
@@ -47,7 +48,7 @@ class OMEMachineVertex(
         # input data
         "_data",
         # sampling freq
-        "_fs" 
+        "_fs",
         # n channels in the ear
         "_n_channels",
         # seq size
@@ -58,6 +59,8 @@ class OMEMachineVertex(
         "_shb",
         # filter coeffs
         "_sha",
+        # timer period
+        "_timer_period"
     ]
 
     # The number of bytes for the parameters
@@ -73,6 +76,9 @@ class OMEMachineVertex(
 
     # outgoing partition name from OME vertex
     OME_PARTITION_ID = "OMEData"
+
+    # ???????????????
+    MAGIC_TWO = 700.0
 
     REGIONS = Enum(
         value="REGIONS",
@@ -95,10 +101,9 @@ class OMEMachineVertex(
                ("N_PROVENANCE_ELEMENTS", 6)])
 
     def __init__(
-            self, data, fs, n_channels, seq_size, time_scale_factor,
-            profile=False):
+            self, data, fs, n_channels, seq_size, timer_period, profile=False):
         """ constructor for OME vertex
-        
+
         :param data: the input data
         :param fs: the sampling freq
         :param n_channels: how many channels to process
@@ -108,7 +113,7 @@ class OMEMachineVertex(
         MachineVertex.__init__(self, label="OME Node", constraints=None)
         AbstractProvidesNKeysForPartition.__init__(self)
         AbstractEarProfiled.__init__(self, profile, self.REGIONS.PROFILE.value)
-        AbstractSupportsAutoPauseAndResume.__init__(self)
+        AbstractMachineSupportsAutoPauseAndResume.__init__(self)
 
         self._data = data
         self._fs = fs
@@ -120,15 +125,15 @@ class OMEMachineVertex(
             (len(self._data) * DataType.FLOAT_64.size) + DataType.UINT32.size)
 
         # write timer period
-        self._timer_period = (1e6 * self._seq_size / self._fs)
+        self._timer_period = timer_period
 
         # calculate stapes hpf coefficients
-        wn = 1.0 / self._fs * 2.0 * 700.0
+        wn = 1.0 / self._fs * 2.0 * self.MAGIC_TWO
 
         # noinspection PyTypeChecker
         [self._shb, self._sha] = sig.butter(2, wn, 'high')
 
-    @overrides(AbstractSupportsAutoPauseAndResume.my_local_time_period)
+    @overrides(AbstractMachineSupportsAutoPauseAndResume.my_local_time_period)
     def my_local_time_period(self, simulator_time_step):
         return self._timer_period
 
@@ -217,7 +222,7 @@ class OMEMachineVertex(
 
     def _reserve_memory_regions(self, spec):
         """ reserve the dsg regions
-        
+
         :param spec: data spec
         :rtype: None
         """
@@ -248,10 +253,10 @@ class OMEMachineVertex(
 
     def _write_params(self, spec, routing_info):
         """ write the basic params region
-        
+
         :param spec:  data spec
         :param routing_info: the keys holder
-        :rtype: None 
+        :rtype: None
         """
 
         spec.switch_write_focus(self.REGIONS.PARAMETERS.value)
@@ -272,9 +277,9 @@ class OMEMachineVertex(
 
     def _write_filter_coeffs(self, spec):
         """ write filter coeffs to dsg
-        
+
         :param spec: dsg writer
-        :rtype: None 
+        :rtype: None
         """
 
         spec.switch_write_focus(self.REGIONS.FILTER_COEFFS.value)
@@ -287,9 +292,9 @@ class OMEMachineVertex(
 
     def _write_input_data(self, spec):
         """ write input data to dsg
-        
+
         :param spec: data spec writer
-        :rtype: None 
+        :rtype: None
         """
 
         spec.switch_write_focus(self.REGIONS.DATA.value)
@@ -302,25 +307,25 @@ class OMEMachineVertex(
         "routing_info": "MemoryRoutingInfos",
         "tags": "MemoryTags",
         "placements": "MemoryPlacements",
-        "machine_time_step": "MachineTimeStep",
+        "local_time_step_map": "MachineTimeStepMap",
         "time_scale_factor": "TimeScaleFactor"
     })
     @overrides(
         AbstractGeneratesDataSpecification.generate_data_specification,
         additional_arguments=[
-            "routing_info", "tags", "placements", "machine_time_step",
+            "routing_info", "tags", "placements", "local_time_step_map",
             "time_scale_factor"])
     def generate_data_specification(
             self, spec, placement, routing_info, tags, placements,
-            machine_time_step, time_scale_factor):
+            local_time_step_map, time_scale_factor):
 
         self._reserve_memory_regions(spec)
 
         # simulation.c requirements
         spec.switch_write_focus(self.REGIONS.SYSTEM.value)
         spec.write_array(simulation_utilities.get_simulation_header_array(
-            self.get_binary_file_name(), machine_time_step, time_scale_factor,
-            self._timer_period))
+            self.get_binary_file_name(), local_time_step_map[self],
+            time_scale_factor))
 
         self._write_params(spec, routing_info)
         self._write_filter_coeffs(spec)

@@ -2,9 +2,9 @@ from __future__ import division
 from pacman.model.graphs.abstract_sdram_partition import AbstractSDRAMPartition
 from pacman.model.graphs.common import Slice
 from pacman.model.graphs.machine import MachineVertex
+from pacman.model.resources import ConstantSDRAM
 from pacman.model.resources.resource_container import ResourceContainer
 from pacman.model.resources.dtcm_resource import DTCMResource
-from pacman.model.resources import ConstantSDRAM
 from pacman.model.resources.cpu_cycles_per_tick_resource \
     import CPUCyclesPerTickResource
 from pacman.model.decorators.overrides import overrides
@@ -12,8 +12,9 @@ from pacman.executor.injection_decorator import inject_items
 from spinn_front_end_common.abstract_models import \
     AbstractSupportsBitFieldGeneration, \
     AbstractSupportsBitFieldRoutingCompression
-from spinn_front_end_common.abstract_models.impl.\
-    supports_auto_pause_and_resume import SupportsAutoPauseAndResume
+from spinn_front_end_common.abstract_models.\
+    abstract_machine_supports_auto_pause_and_resume import \
+    AbstractMachineSupportsAutoPauseAndResume
 
 from spinn_utilities.log import FormatAdapter
 
@@ -26,8 +27,6 @@ from spinn_front_end_common.abstract_models\
     import AbstractGeneratesDataSpecification
 from spinn_front_end_common.interface.buffer_management.buffer_models\
     .abstract_receive_buffers_to_host import AbstractReceiveBuffersToHost
-from spinn_front_end_common.interface.buffer_management \
-    import recording_utilities
 from spinn_front_end_common.utilities.constants import BYTES_PER_WORS
 from spinn_front_end_common.utilities.utility_objs import ExecutableType
 from spinn_front_end_common.abstract_models\
@@ -57,7 +56,7 @@ class DRNLMachineVertex(
         AbstractProvidesNKeysForPartition, AbstractEarProfiled,
         AbstractReceiveBuffersToHost, AbstractSupportsBitFieldGeneration,
         AbstractSupportsBitFieldRoutingCompression,
-        SupportsAutoPauseAndResume):
+        AbstractMachineSupportsAutoPauseAndResume):
 
     """ A vertex that runs the DRNL algorithm
     """
@@ -67,8 +66,6 @@ class DRNLMachineVertex(
         "_fs",
         "_delay",
         "_drnl_index",
-        "_is_recording",
-        "_moc_vertices",
         "_num_data_points",
         "_n_moc_data_points",
         "_recording_size",
@@ -81,7 +78,9 @@ class DRNLMachineVertex(
         "_parent",
         "_n_buffers_in_sdram_total",
         "__on_chip_generatable_area",
-        "__on_chip_generatable_size"
+        "__on_chip_generatable_size",
+        "_neuron_recorder",
+        "_timer_period"
     ]
 
     FAIL_TO_RECORD_MESSAGE = (
@@ -93,10 +92,10 @@ class DRNLMachineVertex(
     DRNL_SDRAM_PARTITION_ID = "DRNLSDRAMData"
 
     # The number of bytes for the parameters
-    # 1: n data points, 2: data key, 3: ome data key,
-    # 4: seq size, 5:n buffers in sdram, 6. n synapse types
-    # 7. moc_resample_factor,
-    _N_PARAMS = 7
+    #  1: data key, 2: ome data key,
+    # 3: seq size, 4:n buffers in sdram, 5. n synapse types
+    # 6. moc_resample_factor,
+    _N_PARAMS = 6
     _N_PARAMETER_BYTES = _N_PARAMS * BYTES_PER_WORS
 
     # 1 moc_dec1, 2. moc_dec_2, 3 moc_dec_3, 4 moc_factor_1, 5 ctbm,
@@ -132,6 +131,20 @@ class DRNLMachineVertex(
 
     RATE_TO_ATTENTUATION_FACTOR = 6e2
 
+    MOC_BUFFER_SIZE = 10
+
+    MOC = "moc"
+
+    # the params recordable from a drnl vertex
+    RECORDABLES = [MOC]
+
+    # recordable units NOTE RJ and ABS have no idea, but we're going with
+    # meters for completeness on the MOC.
+    RECORDABLE_UNITS = {MOC: 'meters'}
+
+    # recording region id for the moc
+    MOC_RECORDABLE_REGION_ID = 0
+
     # regions
     REGIONS = Enum(
         value="REGIONS",
@@ -139,7 +152,7 @@ class DRNLMachineVertex(
                ('PARAMETERS', 1),
                ('DOUBLE_PARAMS', 2),
                ('FILTER_PARAMS', 3),
-               ('RECORDING', 4),
+               ('NEURON_RECORDING', 4),
                ('PROFILE', 5),
                ('SDRAM_EDGE_ADDRESS', 6),
                ('SYNAPSE_PARAMS', 7),
@@ -153,22 +166,23 @@ class DRNLMachineVertex(
                ('BIT_FIELD_KEY_MAP', 15)])
 
     def __init__(
-            self, cf, fs, n_data_points, drnl_index, is_recording,
-            profile, seq_size, synapse_manager, parent,
-            n_buffers_in_sdram_total):
-        """ constructor for drnl
-        
-        :param cf: 
-        :param delay: 
-        :param fs: 
-        :param n_data_points: 
-        :param drnl_index: 
-        :param is_recording: 
-        :param profile: 
-        :param seq_size: 
-        :param synapse_manager: 
-        :param parent: 
-        :param n_buffers_in_sdram_total: 
+            self, cf, fs, n_data_points, drnl_index, profile, seq_size,
+            synapse_manager, parent, n_buffers_in_sdram_total,
+            neuron_recorder, timer_period):
+        """ builder of the drnl machine vertex
+
+        :param cf: ????????
+        :param fs: sampling freequency of the OME
+        :param n_data_points: the number of elements.....
+        :param drnl_index:  the index in the list of drnls (used for slices)
+        :param profile: bool flag saying if this vertex is set to profile
+        :param seq_size: the size of a block
+        :param synapse_manager: the synaptic manager
+        :param parent: the app vertex
+        :param n_buffers_in_sdram_total: the number of buffers in sequence in\
+         the sdram edge
+        :param neuron_recorder: the recorder for moc
+        :param timer_period: the timer period of this core
         """
 
         MachineVertex.__init__(
@@ -183,26 +197,22 @@ class DRNLMachineVertex(
         self._cf = cf
         self._fs = fs
         self._drnl_index = drnl_index
-        self._is_recording = is_recording
         self._seq_size = seq_size
         self._synapse_manager = synapse_manager
         self._parent = parent
         self._n_buffers_in_sdram_total = n_buffers_in_sdram_total
+        self._neuron_recorder = neuron_recorder
+        self._timer_period = timer_period
 
         self._sdram_edge_size = (
             self._n_buffers_in_sdram_total * self._seq_size *
             DataType.FLOAT_64.size)
 
-        self._moc_vertices = list()
-
         self._num_data_points = n_data_points
-        self._n_moc_data_points = int(
-            (self._num_data_points / (self._fs / 1000.0)) / 10) * 10
 
         # recording size
-        self._recording_size = (
-            self._n_moc_data_points * DataType.FLOAT_64.size +
-            DataType.UINT32.size)
+        self._recording_size_per_sim_time_step = (
+            DataType.FLOAT_64.size * self.MOC_BUFFER_SIZE)
 
         # filter params
         self._filter_params = self._calculate_filter_parameters()
@@ -236,6 +246,18 @@ class DRNLMachineVertex(
             placement=placement, transceiver=transceiver,
             region=self.REGIONS.BIT_FIELD_FILTER.value)
 
+    @overrides(AbstractMachineSupportsAutoPauseAndResume.my_local_time_period)
+    def my_local_time_period(self, simulator_time_step):
+        return self._timer_period
+
+    @staticmethod
+    def get_matrix_scalar_data_types():
+        return {DRNLMachineVertex.MOC: DataType.FLOAT_64}
+
+    @staticmethod
+    def get_matrix_output_data_types():
+        return {DRNLMachineVertex.MOC: DataType.FLOAT_64}
+
     @property
     def sdram_edge_size(self):
         return self._sdram_edge_size
@@ -256,9 +278,9 @@ class DRNLMachineVertex(
         return key
 
     def _calculate_filter_parameters(self):
-        """ magic maths for filter params. 
-        
-        :return: 
+        """ magic maths for filter params.
+
+        :return: list of 8 parameters used by the core.
         """
         dt = 1.0 / self._fs
         nl_b_wq = 180.0
@@ -316,18 +338,17 @@ class DRNLMachineVertex(
     @property
     @inject_items({
         "graph": "MemoryApplicationGraph",
-        "machine_time_step": "MachineTimeStep",
+        "default_machine_time_step": "DefaultMachineTimeStep",
     })
     @overrides(
         MachineVertex.resources_required,
-        additional_arguments={"graph", "machine_time_step"})
-    def resources_required(self, graph, machine_time_step):
+        additional_arguments={"graph", "default_machine_time_step"})
+    def resources_required(self, graph, default_machine_time_step):
         # system region
         sdram = constants.SYSTEM_BYTES_REQUIREMENT
         # sdram edge address store
         sdram += (self.SDRAM_EDGE_ADDRESS_SIZE_IN_WORDS
                   * constants.WORD_TO_BYTE_MULTIPLIER)
-
         # bitfields bitfield region
         sdram += bit_field_utilities.get_estimated_sdram_for_bit_field_region(
             graph, self)
@@ -346,16 +367,21 @@ class DRNLMachineVertex(
         sdram += self._N_DOUBLE_PARAMS_BYTES
         # profile
         sdram += self._profile_size()
-        # recording
-        sdram += self._recording_size
         # synapses
         sdram += self._synapse_manager.get_sdram_usage_in_bytes(
             Slice(self._drnl_index, self._drnl_index + 1),
-            graph.get_edges_ending_at_vertex(self._parent),  machine_time_step)
+            graph.get_edges_ending_at_vertex(self._parent),
+            default_machine_time_step)
+        # recording stuff
+        sdram += self._neuron_recorder.get_sdram_usage_in_bytes(
+            Slice(self._drnl_index, self._drnl_index))
+        variable_sdram = self._neuron_recorder.get_variable_sdram_usage(
+            Slice(self._drnl_index, self._drnl_index))
 
+        # find variable sdram
         resources = ResourceContainer(
             dtcm=DTCMResource(0),
-            sdram=ConstantSDRAM(sdram),
+            sdram=variable_sdram + ConstantSDRAM(sdram),
             cpu_cycles=CPUCyclesPerTickResource(0),
             iptags=[], reverse_iptags=[])
         return resources
@@ -375,12 +401,12 @@ class DRNLMachineVertex(
     def _reserve_memory_regions(
             self, spec, machine_graph, n_key_map, vertex):
         """ reserve memory regions
-        
+
         :param spec: spec
         :param machine_graph: machine graph
         :param n_key_map: map between partitions and n keys
         :param vertex: machine vertex
-        :rtype: None 
+        :rtype: None
         """
 
         # reserve system region
@@ -399,8 +425,9 @@ class DRNLMachineVertex(
 
         # reserve recording region
         spec.reserve_memory_region(
-            self.REGIONS.RECORDING.value,
-            recording_utilities.get_recording_header_size(1),
+            self.REGIONS.NEURON_RECORDING.value,
+            self._neuron_recorder.get_static_sdram_usage(
+                Slice(self._drnl_index, self._drnl_index)),
             "recording")
 
         # sdram edge addresses
@@ -425,22 +452,19 @@ class DRNLMachineVertex(
         self._reserve_profile_memory_regions(spec)
 
     def _write_param_region(self, spec, machine_graph, routing_info):
-        """
-        
-        :param spec: 
-        :param machine_graph: 
-        :param routing_info: 
-        :return: 
+        """ writes the param region
+
+        :param spec: spec
+        :param machine_graph: machine graph
+        :param routing_info: the holder of keys
+        :rtype: None
         """
         spec.switch_write_focus(self.REGIONS.PARAMETERS.value)
-
-        # Write the data size in words
-        spec.write_value(self._num_data_points)
 
         ome_data_key = None
         for edge in machine_graph.get_edges_ending_at_vertex(self):
             if isinstance(edge.pre_vertex, OMEMachineVertex):
-               ome_data_key = routing_info.get_first_key_for_edge(edge)
+                ome_data_key = routing_info.get_first_key_for_edge(edge)
 
         # Write the key
         spec.write_value(self._get_data_key(routing_info))
@@ -461,10 +485,10 @@ class DRNLMachineVertex(
         spec.write_value(self._fs / 1000.0)
 
     def _write_double_params_region(self, spec):
-        """
-        
-        :param spec: 
-        :return: 
+        """ writes the parameters which are double types
+
+        :param spec: data spec writer
+        :rtype: None
         """
 
         spec.switch_write_focus(self.REGIONS.DOUBLE_PARAMS.value)
@@ -498,11 +522,11 @@ class DRNLMachineVertex(
         spec.write_value(ctbm / 30e4, data_type=DataType.FLOAT_64)
 
     def _write_sdram_edge_region(self, spec, machine_graph):
-        """
-        
-        :param spec: 
-        :param machine_graph: 
-        :return: 
+        """ writes data for the sdram edge reading
+
+        :param spec: the data spec writer
+        :param machine_graph: the machine graph
+        :rtype: None
         """
 
         spec.switch_write_focus(self.REGIONS.SDRAM_EDGE_ADDRESS.value)
@@ -518,17 +542,17 @@ class DRNLMachineVertex(
                 break
 
     def _write_filter_params(self, spec):
-        """
-        
-        :param spec: 
-        :return: 
+        """ writes the filter params
+
+        :param spec: specification writer
+        :rtype: None
         """
         spec.switch_write_focus(self.REGIONS.FILTER_PARAMS.value)
         for param in self._filter_params:
             spec.write_value(param, data_type=DataType.FLOAT_64)
 
     @inject_items({
-        "machine_time_step": "MachineTimeStep",
+        "time_period_map": "MachineTimeStepMap",
         "time_scale_factor": "TimeScaleFactor",
         "machine_graph": "MemoryMachineGraph",
         "application_graph": "MemoryApplicationGraph",
@@ -536,18 +560,19 @@ class DRNLMachineVertex(
         "placements": "MemoryPlacements",
         "tags": "MemoryTags",
         "graph_mapper": "MemoryGraphMapper",
+        "data_n_time_steps": "DataNTimeSteps",
         "n_key_map": "MemoryMachinePartitionNKeysMap"
     })
     @overrides(
         AbstractGeneratesDataSpecification.generate_data_specification,
         additional_arguments=[
-            "machine_time_step", "time_scale_factor", "machine_graph",
+            "time_period_map", "time_scale_factor", "machine_graph",
             "routing_info", "placements", "tags", "graph_mapper",
-            "application_graph", "n_key_map"])
+            "application_graph", "n_key_map", "data_n_time_steps"])
     def generate_data_specification(
-            self, spec, placement, machine_time_step, time_scale_factor,
+            self, spec, placement, time_period_map, time_scale_factor,
             machine_graph, routing_info, placements, tags, graph_mapper,
-            application_graph, n_key_map):
+            application_graph, n_key_map, data_n_time_steps):
 
         # reserve regions
         self._reserve_memory_regions(spec, machine_graph, n_key_map, self)
@@ -555,7 +580,7 @@ class DRNLMachineVertex(
         # simulation.c requirements
         spec.switch_write_focus(self.REGIONS.SYSTEM.value)
         spec.write_array(simulation_utilities.get_simulation_header_array(
-            self.get_binary_file_name(), machine_time_step,
+            self.get_binary_file_name(), time_period_map[self],
             time_scale_factor))
 
         # params
@@ -584,16 +609,16 @@ class DRNLMachineVertex(
             self.REGIONS.BIT_FIELD_KEY_MAP.value)
 
         # Write the recording regions
-        spec.switch_write_focus(self.REGIONS.RECORDING.value)
-        ip_tags = tags.get_ip_tags_for_vertex(self) or []
-        spec.write_array(recording_utilities.get_recording_header_array(
-            [self._recording_size], ip_tags=ip_tags))
+        self._neuron_recorder.write_neuron_recording_region(
+            spec, self.REGIONS.NEURON_RECORDING.value,
+            Slice(self._drnl_index, self._drnl_index),
+            data_n_time_steps)
 
         self._synapse_manager.write_data_spec(
             spec, graph_mapper.get_application_vertex(self),
             Slice(self._drnl_index, self._drnl_index), self, placement,
             machine_graph, application_graph, routing_info, graph_mapper,
-            self.GLOBAL_WEIGHT_SCALE, machine_time_step,
+            self.GLOBAL_WEIGHT_SCALE, time_period_map[self],
             self.REGIONS.SYNAPSE_PARAMS.value,
             self.REGIONS.POPULATION_TABLE.value,
             self.REGIONS.SYNAPTIC_MATRIX.value,
@@ -610,38 +635,9 @@ class DRNLMachineVertex(
         # End the specification
         spec.end_specification()
 
-    def read_moc_attenuation(self, buffer_manager, placement):
-        """
-         Read back the spikes 
-        :param buffer_manager: buffer manager
-        :param placement: placement
-        :return: output data
-        """
-
-        data, _ = buffer_manager.get_data_by_placement(
-            placement, self.MOC_RECORDING_REGION_ID)
-        formatted_data = (
-            numpy.array(data, dtype=numpy.uint8, copy=True).view(numpy.float64))
-        output_data = formatted_data.copy()
-        output_length = len(output_data)
-
-        # check all expected data has been recorded
-        if output_length != self._n_moc_data_points:
-            # if not set output to zeros of correct length, then failed to
-            # fully record
-            logger.error(self.FAIL_TO_RECORD_MESSAGE.format(
-                len(output_data), self._n_moc_data_points, placement.x,
-                placement.y, placement.p))
-            output_data.resize(self._n_moc_data_points, refcheck=False)
-        return output_data
-
     @overrides(AbstractReceiveBuffersToHost.get_recorded_region_ids)
     def get_recorded_region_ids(self):
-        if self._is_recording:
-            regions = [self.MOC_RECORDING_REGION_ID]
-        else:
-            regions = []
-        return regions
+        return [self.MOC_RECORDING_REGION_ID]
 
     @overrides(AbstractReceiveBuffersToHost.get_recording_region_base_address)
     def get_recording_region_base_address(self, txrx, placement):

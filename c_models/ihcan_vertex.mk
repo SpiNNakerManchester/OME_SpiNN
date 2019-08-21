@@ -1,6 +1,11 @@
 APP = SpiNNakEar_IHCAN
 
-SOURCES = ihcan_vertex/SpiNNakEar_IHCAN.c
+SOURCE_DIRS := src/
+SOURCE_DIRS += $(abspath $(NEURAL_MODELLING_DIRS)/src)
+
+SOURCES = ihcan_vertex/SpiNNakEar_IHCAN.c \
+          neuron/neuron_recording.c \
+          common/out_spikes.c
 
 CFLAGS += -DSPINNAKER
 

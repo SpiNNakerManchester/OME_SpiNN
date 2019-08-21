@@ -1,4 +1,3 @@
-from data_specification.enums import DataType
 from pacman.model.graphs.application import ApplicationEdge
 from pacman.model.graphs.common import Slice, EdgeTrafficType
 from pacman.model.graphs.impl.constant_sdram_machine_partition import \
@@ -10,23 +9,30 @@ from pacman.model.partitioner_interfaces.\
 from pacman.model.partitioner_interfaces.\
     abstract_controls_source_of_edges import \
     AbstractControlsSourceOfEdges
-from spinn_front_end_common.abstract_models import AbstractChangableAfterRun
+
+from spinn_front_end_common.abstract_models import AbstractChangableAfterRun, \
+    AbstractCanReset
+from spinn_front_end_common.abstract_models.\
+    abstract_application_supports_auto_pause_and_resume import \
+    AbstractApplicationSupportsAutoPauseAndResume
 from spinn_front_end_common.utilities import \
     globals_variables, helpful_functions
+from spinn_front_end_common.utilities.constants import \
+    MICRO_TO_SECOND_CONVERSION
 from spinn_front_end_common.utilities.exceptions import ConfigurationException
-from spinn_front_end_common.utilities.globals_variables import get_simulator
-from spinnak_ear.spinnak_ear_edges.spinnaker_ear_machine_edge import \
-    SpiNNakEarMachineEdge
 
+from spynnaker.pyNN.models.abstract_models import AbstractContainsUnits
 from spynnaker.pyNN.models.abstract_models.\
     abstract_accepts_incoming_synapses import AbstractAcceptsIncomingSynapses
 from spynnaker.pyNN.models.abstract_models.\
     abstract_sends_outgoing_synapses import \
     AbstractSendsOutgoingSynapses
 from spynnaker.pyNN.models.common import AbstractSpikeRecordable, \
-    AbstractNeuronRecordable
+    AbstractNeuronRecordable, NeuronRecorder
 from spynnaker.pyNN.models.common.simple_population_settable \
     import SimplePopulationSettable
+from spynnaker.pyNN.models.neuron.synapse_dynamics import SynapseDynamicsStatic
+from spynnaker.pyNN.models.neuron.synaptic_manager import SynapticManager
 
 from pacman.model.graphs.application.\
     application_vertex import ApplicationVertex
@@ -35,6 +41,8 @@ from pacman.model.partitioner_interfaces.hand_over_to_vertex import \
 from pacman.model.decorators.overrides import overrides
 from pacman.executor.injection_decorator import inject_items
 
+from spinnak_ear.spinnak_ear_edges.spinnaker_ear_machine_edge import \
+    SpiNNakEarMachineEdge
 from spinnak_ear.spinnak_ear_machine_vertices.ome_machine_vertex import \
     OMEMachineVertex
 from spinnak_ear.spinnak_ear_machine_vertices.drnl_machine_vertex import \
@@ -44,12 +52,10 @@ from spinnak_ear.spinnak_ear_machine_vertices.ihcan_machine_vertex import \
 from spinnak_ear.spinnak_ear_machine_vertices.an_group_machine_vertex import \
     ANGroupMachineVertex
 
-import numpy 
+import numpy
 import math
 import random
 import logging
-
-from spynnaker.pyNN.models.neuron.synaptic_manager import SynapticManager
 
 logger = logging.getLogger(__name__)
 
@@ -59,14 +65,15 @@ class SpiNNakEarApplicationVertex(
         SimplePopulationSettable, HandOverToVertex, AbstractChangableAfterRun,
         AbstractSpikeRecordable, AbstractNeuronRecordable,
         AbstractControlsDestinationOfEdges, AbstractControlsSourceOfEdges,
-        AbstractSendsOutgoingSynapses):
+        AbstractSendsOutgoingSynapses, AbstractCanReset, AbstractContainsUnits,
+        AbstractApplicationSupportsAutoPauseAndResume):
 
     __slots__ = [
         # pynn model
         '_model',
         # bool flag for neuron param changes
         '_remapping_required',
-        # ihcan vertices 
+        # ihcan vertices
         "_ihcan_vertices",
         # drnl vertices
         "_drnl_vertices",
@@ -76,12 +83,6 @@ class SpiNNakEarApplicationVertex(
         "_synapse_dynamics",
         # fibres per.... something
         "_n_fibres_per_ihc",
-        # recording spikes
-        "_is_recording_spikes",
-        # recording the attenuation value
-        "_is_recording_moc",
-        # recording the probability of the inner hair to spike
-        "_is_recording_inner_hair_spike_prob",
         # the seed for the inner hair fibre
         "_ihcan_fibre_random_seed",
         # the number of columns / rows for aggregation tree
@@ -90,8 +91,12 @@ class SpiNNakEarApplicationVertex(
         "__synapse_manager",
         # the number of drnls there are.
         "_n_dnrls",
-        # the number of agg verts which are final aggegation verts.
-        "_n_final_agg_groups"
+        # the number of agg verts which are final aggregation verts.
+        "_n_final_agg_groups",
+        # the pole frequencies
+        "_pole_freqs",
+        # The timer period for the fast components
+        "_timer_period"
     ]
 
     # NOTES IHC = inner hair cell
@@ -101,9 +106,34 @@ class SpiNNakEarApplicationVertex(
 
     # error message for frequency
     FREQUENCY_ERROR = (
-        "The input sampling frequency is too high for the chosen simulation " 
+        "The input sampling frequency is too high for the chosen simulation "
         "time scale. Please reduce Fs or increase the time scale factor in "
         "the config file")
+
+    # error message for get units
+    GET_UNIT_ERROR = "do not know what to do with variable {} for get units"
+
+    # error message if getting source outside aggregation verts
+    PRE_SLICE_ERROR = (
+        "Why are you asking for a source outside of aggregation verts?!")
+
+    # error message if getting destination verts outside drnls.
+    POST_SLICE_ERROR = (
+        "why you asking for a destination atoms outside of the drnl verts!?")
+
+    # error for processing plastic synapses
+    PLASTIC_SYNAPSE_ERROR = (
+        "The SpiNNaear cannot handle plastic synapses at the moment, "
+        "complain to the SpiNNaker software team if this is a problem.")
+
+    # error message for being asked to clear recording of a param we dont know
+    CLEAR_RECORDING_ERROR = "Spinnakear does not support recording of {}"
+
+    # error message for set recording of a variable we dont know about
+    RECORDING_ERROR = "Spinnakear does not support recording of {}"
+
+    # error message for sampling interval
+    SAMPLING_INTERVAL_ERROR = "do not know how to handle variable {}"
 
     # error message for incorrect neurons map
     N_NEURON_ERROR = (
@@ -115,24 +145,23 @@ class SpiNNakEarApplicationVertex(
     # app edge sdram partition id
     SDRAM_APP_EDGE_PARTITION_ID = "internal_sdram"
 
-    # recording names
-    SPIKES = "spikes"
-    MOC = "moc"
-    SPIKE_PROB = "inner_ear_spike_probability"
+    # green wood function from https://en.wikipedia.org/wiki/Greenwood_function
+    # constant below and mapped to variable names
 
-    # named flag
-    _DRNL = "drnl"
+    # green wood constants for human cochlea hearing frequency mapping
+    # A is a scaling constant between the characteristic frequency and the
+    # upper frequency limit of the species
+    GREEN_WOOD_HUMAN_CONSTANT_A = 165.4
 
-    # whats recordable
-    _RECORDABLES = [SPIKES, MOC, SPIKE_PROB]
+    # a is the slope of the straight-line portion of the frequency-position
+    # curve, which has shown to be conserved throughout all investigated
+    # species after scaling the length of the cochlea
+    GREEN_WOOD_HUMAN_CONSTANT_ALPHA = 2.1
 
-    # recordable units NOTE RJ and ABS have no idea, but we're going with
-    # meters for completeness on the MOC.
-    _RECORDABLE_UNITS = {
-        SPIKES: SPIKES,
-        MOC: 'meters',
-        SPIKE_PROB: "percentage"
-    }
+    # K is a constant of integration that represents the divergence from the
+    # log nature of the curve and is determined by the lower frequency
+    # audible limit in the species.
+    GREEN_WOOD_HUMAN_CONSTANT_K = 0.88
 
     # n recording regions
     _N_POPULATION_RECORDING_REGIONS = 1
@@ -140,14 +169,29 @@ class SpiNNakEarApplicationVertex(
     # random numbers
     _FINAL_ROW_N_ATOMS = 256
     MAX_TIME_SCALE_FACTOR_RATIO = 22050
+
+    # flags for sorting out random fibres. might be a enum
     HSR_FLAG = 2
     MSR_FLAG = 1
     LSR_FLAG = 0
 
+    # how many synapse types this binary supports
     N_SYNAPSE_TYPES = 2
 
+    # these curve values are built from profiling the IHCAN cores to deduce
+    # performance.
+    CURVE_ONE = 18.12
+    CURVE_TWO = 10.99
+
+    # max audio frequency supported
+    DEFAULT_MAX_AUDIO_FREQUENCY = 20000
+
+    # min audio frequency supported
+    DEFAULT_MIN_AUDIO_FREQUENCY = 30
+
     def __init__(
-            self, n_neurons, constraints, label, model, profile):
+            self, n_neurons, constraints, label, model, profile,
+            time_scale_factor):
         # Superclasses
         ApplicationVertex.__init__(self, label, constraints)
         AbstractAcceptsIncomingSynapses.__init__(self)
@@ -155,6 +199,7 @@ class SpiNNakEarApplicationVertex(
         HandOverToVertex.__init__(self)
         AbstractChangableAfterRun.__init__(self)
         AbstractSpikeRecordable.__init__(self)
+        AbstractNeuronRecordable.__init__(self)
 
         self._model = model
         self._profile = profile
@@ -167,35 +212,47 @@ class SpiNNakEarApplicationVertex(
             self.N_SYNAPSE_TYPES, None, None,
             globals_variables.get_simulator().config)
 
-        # ear hair frequency bits in total per inner ear channel
-        self._n_fibres_per_ihc = (
-            self._model.n_lsr_per_ihc + self._model.n_msr_per_ihc +
-            self._model.n_hsr_per_ihc)
+        # calculate n fibres per ihcan core
+        sample_time = time_scale_factor / self._model.fs
+        self._n_fibres_per_ihcan_core = abs(int(
+            math.floor(((sample_time / MICRO_TO_SECOND_CONVERSION) -
+                        self.CURVE_ONE) / self.CURVE_TWO)))
 
-        # number of columns needed for the aggregation tree
-        atoms_per_row = self.calculate_atoms_per_row(
-            self._model.n_channels, self._n_fibres_per_ihc,
-            self._model.n_fibres_per_ihcan,
-            self._model.max_input_to_aggregation_group)
+        self._n_channels = int(n_neurons / self._n_fibres_per_ihcan_core)
 
-        # ????????
-        max_n_atoms_per_group_tree_row = (
-            (self._model.max_input_to_aggregation_group **
-             numpy.arange(1, atoms_per_row + 1)) *
-            self._model.n_fibres_per_ihcan)
+        # process pole freqs
+        self._pole_freqs = self._process_pole_freqs()
 
-        # ????????????
-        max_n_atoms_per_group_tree_row = \
-            max_n_atoms_per_group_tree_row[
-                max_n_atoms_per_group_tree_row <= self._FINAL_ROW_N_ATOMS]
+        # process all the other internal numbers
+        atoms_per_row = self.process_internal_numbers(time_scale_factor)
 
-        self._n_group_tree_rows = max_n_atoms_per_group_tree_row.size
+        # read in param file if needed
+        self._process_param_file(atoms_per_row)
 
-        # recording flags
-        self._is_recording_spikes = False
-        self._is_recording_moc = False
-        self._is_recording_inner_hair_spike_prob = False
+        # recording stuff
+        self._drnl_neuron_recorder = NeuronRecorder(
+            DRNLMachineVertex.RECORDABLES,
+            DRNLMachineVertex.get_matrix_scalar_data_types(),
+            DRNLMachineVertex.get_matrix_output_data_types(), self._n_dnrls)
 
+        self._ihcan_neuron_recorder = NeuronRecorder(
+            IHCANMachineVertex.RECORDABLES,
+            IHCANMachineVertex.get_matrix_scalar_data_types(),
+            IHCANMachineVertex.get_matrix_output_data_types(),
+            self._n_dnrls * self._model.n_ihc)
+
+        # bool for if state has changed.
+        self._change_requires_mapping = True
+        self._change_requires_neuron_parameters_reload = False
+        self._change_requires_data_generation = False
+        self._has_reset_last = True
+
+        # safety check
+        # if self._n_atoms != n_neurons:
+        #    raise ConfigurationException(
+        #        self.N_NEURON_ERROR.format(n_neurons, self._n_atoms))
+
+        # safety stuff
         config = globals_variables.get_simulator().config
         self._time_scale_factor = helpful_functions.read_config_int(
             config, "Machine", "time_scale_factor")
@@ -203,6 +260,45 @@ class SpiNNakEarApplicationVertex(
                 self.MAX_TIME_SCALE_FACTOR_RATIO):
             raise Exception(self.FREQUENCY_ERROR)
 
+        # write timer period
+        self._timer_period = (
+            MICRO_TO_SECOND_CONVERSION *
+            self._model.seq_size / self._model.fs)
+
+    def calculate_n_channels(self, sample_time):
+        n_fibres_per_ihcan_core = abs(int(math.floor((
+            (sample_time / MICRO_TO_SECOND_CONVERSION) -
+            self.CURVE_ONE) / self.CURVE_TWO)))
+        return int(self._n_atoms / n_fibres_per_ihcan_core)
+
+    @overrides(
+        AbstractApplicationSupportsAutoPauseAndResume.
+        my_variable_local_time_period)
+    def my_variable_local_time_period(
+            self, default_machine_time_step, variable):
+        if variable == DRNLMachineVertex.MOC:
+            return default_machine_time_step
+        else:
+            return self._timer_period
+
+    def reset_to_first_timestep(self):
+        # Mark that reset has been done, and reload state variables
+        self._has_reset_last = True
+        self._change_requires_neuron_parameters_reload = False
+
+        # If synapses change during the run,
+        if self._synapse_manager.synapse_dynamics.changes_during_run:
+            self._change_requires_data_generation = True
+
+    def get_units(self, variable):
+        if variable == DRNLMachineVertex.MOC:
+            return DRNLMachineVertex.RECORDABLE_UNITS[variable]
+        elif variable in IHCANMachineVertex.RECORDABLES:
+            return IHCANMachineVertex.RECORDABLE_UNITS[variable]
+        else:
+            raise Exception(self.GET_UNIT_ERROR.format(variable))
+
+    def _process_param_file(self, atoms_per_row):
         if self._model.param_file is not None:
             try:
                 pre_gen_vars = numpy.load(self._model.param_file)
@@ -212,23 +308,68 @@ class SpiNNakEarApplicationVertex(
                 self._edge_index_list = pre_gen_vars['edge_index_list']
                 self._ihc_seeds = pre_gen_vars['ihc_seeds']
                 self._ome_indices = pre_gen_vars['ome_indices']
-            except:
+            except Exception:
                 self._n_atoms, self._n_dnrls, self._n_final_agg_groups = \
                     self.calculate_n_atoms(
                         atoms_per_row,
                         self._model.max_input_to_aggregation_group,
-                        self._model.n_channels, self._model.n_ihc)
+                        self._n_channels, self._model.n_ihc)
                 # save fixed param file
                 self._save_pre_gen_vars(self._model.param_file)
         else:
             self._n_atoms, self._n_dnrls, self._n_final_agg_groups = \
                 self.calculate_n_atoms(
                     atoms_per_row, self._model.max_input_to_aggregation_group,
-                    self._model.n_channels, self._model.n_ihc)
+                    self._n_channels, self._model.n_ihc)
 
-        #if self._n_atoms != n_neurons:
-        #    raise ConfigurationException(
-        #        self.N_NEURON_ERROR.format(n_neurons, self._n_atoms))
+    def process_internal_numbers(self, time_scale_factor):
+
+        # ear hair frequency bits in total per inner ear channel
+        self._n_fibres_per_ihc = (
+            self._model.n_lsr_per_ihc + self._model.n_msr_per_ihc +
+            self._model.n_hsr_per_ihc)
+
+        # number of columns needed for the aggregation tree
+        atoms_per_row = self.calculate_atoms_per_row(
+            self._n_channels, self._n_fibres_per_ihc,
+            self._n_fibres_per_ihcan_core,
+            self._model.max_input_to_aggregation_group)
+
+        # ????????
+        max_n_atoms_per_group_tree_row = (
+            (self._model.max_input_to_aggregation_group **
+             numpy.arange(1, atoms_per_row + 1)) *
+            self._n_fibres_per_ihcan_core)
+
+        # ????????????
+        max_n_atoms_per_group_tree_row = \
+            max_n_atoms_per_group_tree_row[
+                max_n_atoms_per_group_tree_row <= self._FINAL_ROW_N_ATOMS]
+
+        self._n_group_tree_rows = max_n_atoms_per_group_tree_row.size
+        return atoms_per_row
+
+    def _process_pole_freqs(self):
+        if self._model.pole_freqs is None:
+            if self._model.fs > 2 * self.DEFAULT_MAX_AUDIO_FREQUENCY:  # use
+                # the greenwood mapping
+                pole_freqs = (
+                    numpy.flipud([self.GREEN_WOOD_HUMAN_CONSTANT_A * (10 ** (
+                        self.GREEN_WOOD_HUMAN_CONSTANT_ALPHA * numpy.linspace(
+                            [0], [1], self._n_channels)) -
+                            self.GREEN_WOOD_HUMAN_CONSTANT_K)]))
+
+            # don't want alias frequencies so we use a capped log scale map
+            else:
+                max_power = min([numpy.log10(self.fs / 2.), numpy.log10(
+                    self.DEFAULT_MAX_AUDIO_FREQUENCY)])
+                pole_freqs = numpy.flipud(
+                    numpy.logspace(
+                        numpy.log10(self.DEFAULT_MIN_AUDIO_FREQUENCY),
+                        max_power, self._n_channels))
+        else:
+            pole_freqs = self._model.pole_freqs
+        return pole_freqs[0]
 
     @overrides(AbstractSendsOutgoingSynapses.get_out_going_size)
     def get_out_going_size(self):
@@ -255,16 +396,13 @@ class SpiNNakEarApplicationVertex(
         if isinstance(machine_vertex, ANGroupMachineVertex):
             if machine_vertex.is_final_row:
                 return Slice(machine_vertex.low_atom, machine_vertex.low_atom)
-        raise Exception(
-            "Why are you asking for a source outside of aggregation verts?!")
+        raise Exception(self.PRE_SLICE_ERROR)
 
     @overrides(AbstractControlsDestinationOfEdges.get_post_slice_for)
     def get_post_slice_for(self, machine_vertex):
         if isinstance(machine_vertex, DRNLMachineVertex):
             return Slice(machine_vertex.drnl_index, machine_vertex.drnl_index)
-        raise Exception(
-            "why you asking for a destination atoms outside of the drnl "
-            "verts!?")
+        raise Exception(self.POST_SLICE_ERROR)
 
     @overrides(AbstractAcceptsIncomingSynapses.get_in_coming_size)
     def get_in_coming_size(self):
@@ -304,8 +442,9 @@ class SpiNNakEarApplicationVertex(
 
     @overrides(
         AbstractAcceptsIncomingSynapses.get_maximum_delay_supported_in_ms)
-    def get_maximum_delay_supported_in_ms(self, machine_time_step):
-        return 1 * machine_time_step
+    def get_maximum_delay_supported_in_ms(self, default_machine_time_step):
+        return self.__synapse_manager.get_maximum_delay_supported_in_ms(
+            default_machine_time_step)
 
     @overrides(AbstractAcceptsIncomingSynapses.add_pre_run_connection_holder)
     def add_pre_run_connection_holder(
@@ -314,10 +453,9 @@ class SpiNNakEarApplicationVertex(
             connection_holder, projection_edge, synapse_information)
 
     def _save_pre_gen_vars(self, file_path):
-        """
-        saves params into a numpy file. 
+        """ saves params into a numpy file.
         :param file_path: path to file to store stuff into
-        :rtype: None 
+        :rtype: None
         """
         numpy.savez_compressed(
             file_path, n_atoms=self._n_atoms,
@@ -329,18 +467,22 @@ class SpiNNakEarApplicationVertex(
 
     @overrides(AbstractAcceptsIncomingSynapses.set_synapse_dynamics)
     def set_synapse_dynamics(self, synapse_dynamics):
+        if not isinstance(synapse_dynamics, SynapseDynamicsStatic):
+            raise Exception(self.PLASTIC_SYNAPSE_ERROR)
         self._synapse_dynamics = synapse_dynamics
 
     @overrides(AbstractAcceptsIncomingSynapses.get_connections_from_machine)
     def get_connections_from_machine(
             self, transceiver, placement, edge, graph_mapper, routing_infos,
-            synapse_information, machine_time_step, using_extra_monitor_cores,
+            synapse_information, local_time_step_map,
+            using_extra_monitor_cores,
             placements=None,  monitor_api=None, monitor_placement=None,
             monitor_cores=None, handle_time_out_configuration=True,
             fixed_routes=None):
         return self.__synapse_manager.get_connections_from_machine(
             transceiver, placement, edge, graph_mapper, routing_infos,
-            synapse_information, machine_time_step, using_extra_monitor_cores,
+            synapse_information, local_time_step_map,
+            using_extra_monitor_cores,
             DRNLMachineVertex.REGIONS.POPULATION_TABLE.value,
             DRNLMachineVertex.REGIONS.SYNAPTIC_MATRIX.value,
             DRNLMachineVertex.REGIONS.DIRECT_MATRIX.value,
@@ -390,20 +532,22 @@ class SpiNNakEarApplicationVertex(
         return lo_atom + 1
 
     def _build_ome_vertex(
-            self, machine_graph, graph_mapper, lo_atom, resource_tracker):
+            self, machine_graph, graph_mapper, lo_atom, resource_tracker,
+            timer_period):
         """ builds the ome vertex
-        
+
         :param machine_graph: machine graph
         :param graph_mapper: graph mapper
         :param lo_atom: lo atom to put into graph mapper slice
         :param resource_tracker: the resource tracker
+        :param timer_period: the timer period for all machine verts based on\
+        the ear vertex
         :return: the ome vertex and the new low atom
         """
         # build the ome machine vertex
         ome_vertex = OMEMachineVertex(
-            self._model.audio_input, self._model.fs, self._model.n_channels,
-            self._model.seq_size, self._time_scale_factor,
-            profile=self._profile)
+            self._model.audio_input, self._model.fs, self._n_channels,
+            self._model.seq_size, timer_period, self._profile)
 
         # allocate resources and updater graphs
         new_lo_atom = self._add_to_graph_components(
@@ -412,23 +556,26 @@ class SpiNNakEarApplicationVertex(
 
     def _build_drnl_verts(
             self, machine_graph, graph_mapper, new_low_atom, resource_tracker,
-            ome_vertex):
+            ome_vertex, timer_period):
         """ build the drnl verts
-        
+
         :param machine_graph: machine graph
         :param graph_mapper: graph mapper
         :param new_low_atom: the current low atom count for the graph mapper
         :param resource_tracker: the resource tracker for placement
         :param ome_vertex: the ome vertex to tie edges to
-        :return: 
+        :param timer_period: the timer period for all machine verts based on\
+        the ear vertex
+        :return: new low atom count
         """
         pole_index = 0
-        for _ in range(self._model.n_channels):
+        for _ in range(self._n_channels):
             drnl_vertex = DRNLMachineVertex(
-                self._model.pole_freqs[pole_index], self._model.fs,
-                ome_vertex.n_data_points, pole_index, self._is_recording_moc,
-                self._profile, self._model.seq_size, self.__synapse_manager,
-                self, self._model.n_buffers_in_sdram_total)
+                self._pole_freqs[pole_index], self._model.fs,
+                ome_vertex.n_data_points, pole_index, self._profile,
+                self._model.seq_size, self.__synapse_manager, self,
+                self._model.n_buffers_in_sdram_total,
+                self._drnl_neuron_recorder, timer_period)
             pole_index += 1
             new_low_atom = self._add_to_graph_components(
                 machine_graph, graph_mapper, new_low_atom, drnl_vertex,
@@ -439,12 +586,12 @@ class SpiNNakEarApplicationVertex(
     def _build_edges_between_ome_drnls(
             self, ome_vertex, machine_graph, app_edge, graph_mapper):
         """ adds edges between the ome and the drnl vertices
-        
+
         :param ome_vertex: the ome vertex
         :param machine_graph: the machine graph
         :param app_edge: the app edge covering all these edges
         :param graph_mapper: the graph mapper
-        :return: 
+        :rtype: None
         """
         for drnl_vert in self._drnl_vertices:
             edge = SpiNNakEarMachineEdge(ome_vertex, drnl_vert)
@@ -453,23 +600,25 @@ class SpiNNakEarApplicationVertex(
 
     def _build_ihcan_vertices_and_sdram_edges(
             self, machine_graph, graph_mapper, new_low_atom,
-            resource_tracker, app_edge, sdram_app_edge):
+            resource_tracker, app_edge, sdram_app_edge, timer_period):
         """ builds the ihcan verts and adds edges from drnl to them
-        
+
         :param machine_graph: machine graph
         :param graph_mapper: the graph mapper
         :param new_low_atom: the lo atom sued to keep the graph mapper happy
         :param resource_tracker: the resource tracker for placement
         :param app_edge: the app edge to link all mc machine edges to
-        :param sdram_app_edge: the application sdram edge between drnl and 
-        inchan to link all sdram machine edges to. 
+        :param sdram_app_edge: the application sdram edge between drnl and \
+        inchan to link all sdram machine edges to.
+        :param timer_period: the timer period for all machine verts based on\
+        the ear vertex
         :return: iterable of ihcan verts
         """
 
         ichans = list()
 
         # generate ihc seeds
-        n_ihcans = self._model.n_channels * self._model.n_ihc
+        n_ihcans = self._n_channels * self._model.n_ihc
         seed_index = 0
         random_range = numpy.arange(
             n_ihcans * IHCANMachineVertex.N_SEEDS_PER_IHCAN_VERTEX,
@@ -498,11 +647,13 @@ class SpiNNakEarApplicationVertex(
             random.seed(self._model.ihcan_fibre_random_seed)
             random.shuffle(fibres)
 
-            for _ in range(self._model.n_ihc):
+            lo_atom = 0
+            for _ in range(
+                    int(self._model.n_ihc / self._n_fibres_per_ihcan_core)):
 
                 # randomly pick fibre types
                 chosen_indices = [
-                    fibres.pop() for _ in range(self._model.n_fibres_per_ihcan)]
+                    fibres.pop() for _ in range(self._n_fibres_per_ihcan_core)]
 
                 vertex = IHCANMachineVertex(
                     self._model.resample_factor,
@@ -510,17 +661,17 @@ class SpiNNakEarApplicationVertex(
                         seed_index:
                         seed_index +
                         IHCANMachineVertex.N_SEEDS_PER_IHCAN_VERTEX],
-                    self._is_recording_spikes,
-                    self._is_recording_inner_hair_spike_prob,
-                    self._model.n_fibres_per_ihcan,
+                    self._n_fibres_per_ihcan_core,
                     self._model.ear_index, self._profile, self._model.fs,
                     chosen_indices.count(self.LSR_FLAG),
                     chosen_indices.count(self.MSR_FLAG),
                     chosen_indices.count(self.HSR_FLAG),
-                    self._model.max_n_fibres_per_ihcan,
-                    drnl_vertex.n_data_points,
                     self._model.n_buffers_in_sdram_total,
-                    self._model.seq_size)
+                    self._model.seq_size, self._ihcan_neuron_recorder,
+                    Slice(lo_atom,
+                          lo_atom + self._n_fibres_per_ihcan_core - 1),
+                    timer_period)
+                lo_atom += self._n_fibres_per_ihcan_core - 1
                 seed_index += IHCANMachineVertex.N_SEEDS_PER_IHCAN_VERTEX
                 ichans.append(vertex)
 
@@ -594,15 +745,14 @@ class SpiNNakEarApplicationVertex(
 
             to_process = aggregation_verts
 
-    @inject_items({"machine_time_step": "MachineTimeStep",
-                   "application_graph": "MemoryApplicationGraph"})
+    @inject_items({"application_graph": "MemoryApplicationGraph"})
     @overrides(
         HandOverToVertex.create_and_add_to_graphs_and_resources,
-        additional_arguments={"machine_time_step", "application_graph"}
+        additional_arguments={"application_graph"}
     )
     def create_and_add_to_graphs_and_resources(
             self, resource_tracker, machine_graph, graph_mapper,
-            machine_time_step, application_graph):
+            application_graph):
 
         mc_app_edge = ApplicationEdge(self, self)
         sdram_app_edge = ApplicationEdge(self, self, EdgeTrafficType.SDRAM)
@@ -613,14 +763,18 @@ class SpiNNakEarApplicationVertex(
         # atom tracker
         current_atom_count = 0
 
+        timer_period = (
+            MICRO_TO_SECOND_CONVERSION * self._model.seq_size / self._model.fs)
+
         # ome vertex
         ome_vertex, current_atom_count = self._build_ome_vertex(
-            machine_graph, graph_mapper, current_atom_count, resource_tracker)
+            machine_graph, graph_mapper, current_atom_count, resource_tracker,
+            timer_period)
 
         # handle the drnl verts
         current_atom_count = self._build_drnl_verts(
             machine_graph, graph_mapper, current_atom_count, resource_tracker,
-            ome_vertex)
+            ome_vertex, timer_period)
 
         # handle edges between ome and drnls
         self._build_edges_between_ome_drnls(
@@ -630,7 +784,7 @@ class SpiNNakEarApplicationVertex(
         ichan_vertices, current_atom_count = (
             self._build_ihcan_vertices_and_sdram_edges(
                 machine_graph, graph_mapper, current_atom_count,
-                resource_tracker, mc_app_edge, sdram_app_edge))
+                resource_tracker, mc_app_edge, sdram_app_edge, timer_period))
 
         # build aggregation group verts and edges
         self._build_aggregation_group_vertices_and_edges(
@@ -683,12 +837,15 @@ class SpiNNakEarApplicationVertex(
 
     @overrides(AbstractSpikeRecordable.is_recording_spikes)
     def is_recording_spikes(self):
-        return self._is_recording_spikes
+        return self._ihcan_neuron_recorder.is_recording(
+            IHCANMachineVertex.SPIKES)
 
     @overrides(AbstractSpikeRecordable.get_spikes_sampling_interval)
-    def get_spikes_sampling_interval(self):
-        # TODO this needs fixing properly
-        return get_simulator().machine_time_step
+    def get_spikes_sampling_interval(
+            self, graph_mapper, local_time_period_map):
+        return self._ihcan_neuron_recorder.get_neuron_sampling_interval(
+            IHCANMachineVertex.SPIKES, self._ihcan_vertices[0],
+            local_time_period_map)
 
     @overrides(AbstractSpikeRecordable.clear_spike_recording)
     def clear_spike_recording(self, buffer_manager, placements, graph_mapper):
@@ -700,74 +857,119 @@ class SpiNNakEarApplicationVertex(
 
     @overrides(AbstractSpikeRecordable.get_spikes)
     def get_spikes(
-            self, placements, graph_mapper, buffer_manager, machine_time_step):
-        samples = list()
-        for ihcan_vertex in self._ihcan_vertices:
-            # Read the data recorded
-            for fibre in ihcan_vertex.read_samples(
-                    buffer_manager,
-                    placements.get_placement_of_vertex(ihcan_vertex)):
-                samples.append(fibre)
-        return numpy.asarray(samples)
+            self, placements, graph_mapper, buffer_manager,
+            local_timer_period_map):
+        return self._ihcan_neuron_recorder.get_spikes(
+            self._label, buffer_manager,
+            IHCANMachineVertex.RECORDING_REGIONS.SPIKE_RECORDING_REGION_ID,
+            placements, graph_mapper, self, local_timer_period_map)
 
     @overrides(AbstractSpikeRecordable.set_recording_spikes)
     def set_recording_spikes(
-            self, new_state=True, sampling_interval=None, indexes=None):
-        self._is_recording_spikes = new_state
-        self._remapping_required = not self.is_recording(self.SPIKES)
+            self, default_machine_time_step, new_state=True,
+            sampling_interval=None, indexes=None):
+        self.set_recording(
+            IHCANMachineVertex.SPIKES, self._timer_period, new_state,
+            sampling_interval, indexes)
 
     @overrides(AbstractNeuronRecordable.get_recordable_variables)
     def get_recordable_variables(self):
-        return self._RECORDABLES
+        recordables = list()
+        recordables.extend(DRNLMachineVertex.RECORDABLES)
+        recordables.extend(IHCANMachineVertex.RECORDABLES)
+        return recordables
 
     @overrides(AbstractNeuronRecordable.clear_recording)
     def clear_recording(self, variable, buffer_manager, placements,
                         graph_mapper):
-        if variable == self.MOC:
+        if variable == DRNLMachineVertex.MOC:
             for drnl_vertex in self._drnl_vertices:
                 placement = placements.get_placement_of_vertex(drnl_vertex)
                 buffer_manager.clear_recorded_data(
                     placement.x, placement.y, placement.p,
                     DRNLMachineVertex.MOC_RECORDING_REGION_ID)
+        if variable == self.SPIKES:
+            for ihcan_vertex in self._ihcan_vertices:
+                placement = placements.get_placement_of_vertex(ihcan_vertex)
+                buffer_manager.clear_recorded_data(
+                    placement.x, placement.y, placement.p,
+                    (IHCANMachineVertex.RECORDING_REGIONS
+                     .SPIKE_RECORDING_REGION_ID.value))
+        if variable == self.SPIKE_PROB:
+            for ihcan_vertex in self._ihcan_vertices:
+                placement = placements.get_placement_of_vertex(ihcan_vertex)
+                buffer_manager.clear_recorded_data(
+                    placement.x, placement.y, placement.p,
+                    (IHCANMachineVertex.RECORDING_REGIONS
+                     .SPIKE_PROBABILITY_REGION_ID.value))
         else:
             raise ConfigurationException(
-                "Spinnakear does not support recording of {}".format(variable))
+                self.CLEAR_RECORDING_ERROR.format(variable))
 
     @overrides(AbstractNeuronRecordable.get_neuron_sampling_interval)
-    def get_neuron_sampling_interval(self, variable):
-        #TODO need to do this properly
-        return 1
+    def get_neuron_sampling_interval(
+            self, variable, graph_mapper, local_time_period_map):
+        if variable == DRNLMachineVertex.MOC:
+            return self._drnl_neuron_recorder.get_neuron_sampling_interval(
+                variable, self._drnl_vertices[0], local_time_period_map)
+        elif variable in IHCANMachineVertex.RECORDABLES:
+            return self._ihcan_neuron_recorder.get_neuron_sampling_interval(
+                variable, self._ihcan_vertices[0], local_time_period_map)
+        else:
+            raise Exception(self.SAMPLING_INTERVAL_ERROR.format(variable))
 
     @overrides(AbstractNeuronRecordable.set_recording)
-    def set_recording(self, variable, new_state=True, sampling_interval=None,
-                      indexes=None):
-        if variable == self.MOC:
-            self._remapping_required = not self.is_recording(variable)
-            self._is_recording_moc = new_state
+    def set_recording(
+            self, variable, default_machine_time_step, new_state=True,
+            sampling_interval=None, indexes=None):
+        self._change_requires_mapping = not self.is_recording(variable)
+        if variable == DRNLMachineVertex.MOC:
+            self._drnl_neuron_recorder.set_recording(
+                variable, sampling_interval, indexes, self,
+                default_machine_time_step, new_state)
+        elif variable in IHCANMachineVertex.RECORDABLES:
+            self._ihcan_neuron_recorder.set_recording(
+                variable, sampling_interval, indexes, self,
+                default_machine_time_step, new_state)
         else:
-            raise ConfigurationException(
-                "Spinnakear does not support recording of {}".format(variable))
+            raise ConfigurationException(self.RECORDING_ERROR.format(variable))
 
     @overrides(AbstractNeuronRecordable.is_recording)
     def is_recording(self, variable):
-        if variable == self.SPIKES:
-            return self._is_recording_spikes
-        elif variable == self.MOC:
-            return self._is_recording_moc
+        if variable == DRNLMachineVertex.MOC:
+            self._drnl_neuron_recorder.is_recording(variable)
+        elif variable in IHCANMachineVertex.RECORDABLES:
+            self._ihcan_neuron_recorder.is_recording(variable)
         else:
-            raise ConfigurationException(
-                "Spinnakear does not support recording of {}".format(variable))
+            raise ConfigurationException(self.RECORDING_ERROR.format(variable))
 
     @overrides(AbstractNeuronRecordable.get_data)
-    def get_data(self, variable, n_machine_time_steps, placements,
-                 graph_mapper, buffer_manager, machine_time_step):
-        if variable == self.MOC:
-            samples = list()
-            for drnl_vertex in self._drnl_vertices:
-                placement = placements.get_placement_of_vertex(drnl_vertex)
-                samples.append(drnl_vertex.read_moc_attenuation(
-                    buffer_manager, placement))
-            return numpy.asarray(samples)
+    def get_data(
+            self, variable, n_machine_time_steps, placements, graph_mapper,
+            buffer_manager, local_time_period_map):
+        if variable == DRNLMachineVertex.MOC:
+            return self._drnl_neuron_recorder.get_matrix_data(
+                self._label, buffer_manager,
+                DRNLMachineVertex.MOC_RECORDABLE_REGION_ID,
+                placements, graph_mapper, self, variable,
+                n_machine_time_steps, local_time_period_map)
+        elif variable == IHCANMachineVertex.SPIKE_PROB:
+            return self._ihcan_neuron_recorder.get_matrix_data(
+                self._label, buffer_manager,
+                IHCANMachineVertex.RECORDING_REGIONS.
+                SPIKE_PROBABILITY_REGION_ID.value,
+                placements, graph_mapper, self, variable,
+                n_machine_time_steps, local_time_period_map)
+        elif variable == IHCANMachineVertex.SPIKES:
+            return self._ihcan_neuron_recorder.get_spikes(
+                self._label, buffer_manager,
+                IHCANMachineVertex.RECORDING_REGIONS.
+                SPIKE_RECORDING_REGION_ID.value,
+                placements, graph_mapper, self, n_machine_time_steps)
         else:
-            raise ConfigurationException(
-                "Spinnakear does not support recording of {}".format(variable))
+            raise ConfigurationException(self.RECORDING_ERROR.format(variable))
+
+    def get_sampling_interval(self, sample_size_window):
+        return (
+            (self._timer_period * sample_size_window) *
+            MICRO_TO_SECOND_CONVERSION)

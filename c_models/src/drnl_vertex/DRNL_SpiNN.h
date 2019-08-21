@@ -1,3 +1,20 @@
+/*
+ * Copyright (c) 2019-2020 The University of Manchester
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #ifndef DRNL_spiNN_h_
 #define DRNL_spiNN_h_
 
@@ -9,7 +26,7 @@ typedef enum regions {
     PARAMS,
     DOUBLE_PARAMS,
     FILTER_PARAMS,
-    RECORDING,
+    NEURON_RECORDING,
     PROFILER,
     SDRAM_EDGE_ADDRESS,
     SYNAPSE_PARAMS,
@@ -36,6 +53,9 @@ typedef enum synapse_type_indices {
 // recording region
 #define MOC_RECORDING_REGION 0
 
+// how many neurons are in a drnl vertex
+#define N_NEURONS 1
+
 // random named constants
 #define BITS_IN_WORD 32
 
@@ -43,7 +63,6 @@ typedef enum synapse_type_indices {
 #define DRNL_FILLER_ARG 1
 
 // moc stuff
-#define MOC_BUFFER_SIZE 10
 #define INCOMING_SPIKE_BUFFER_SIZE 256
 
 //linear pathway. unknown what each of these are for.
@@ -71,7 +90,6 @@ typedef union {
 
 // params from the parameter region in sdram
 typedef struct parameters_struct{
-   int data_size;
    uint key;
    uint ome_data_key;
    int seq_size;

@@ -13,7 +13,8 @@ from spinn_front_end_common.abstract_models\
     .abstract_generates_data_specification \
     import AbstractGeneratesDataSpecification
 from spinn_front_end_common.abstract_models.impl.\
-    supports_auto_pause_and_resume import SupportsAutoPauseAndResume
+    machine_supports_auto_pause_and_resume import \
+    MachineSupportsAutoPauseAndResume
 from spinn_front_end_common.interface.provenance import \
     ProvidesProvenanceDataFromMachineImpl
 from spinn_front_end_common.utilities.utility_objs import ExecutableType, \
@@ -31,7 +32,7 @@ from enum import Enum
 class ANGroupMachineVertex(
         MachineVertex, AbstractHasAssociatedBinary,
         AbstractGeneratesDataSpecification,
-        AbstractProvidesNKeysForPartition, SupportsAutoPauseAndResume,
+        AbstractProvidesNKeysForPartition, MachineSupportsAutoPauseAndResume,
         ProvidesProvenanceDataFromMachineImpl):
     """ A vertex that runs the multi-cast acknowledge algorithm
     """
@@ -137,9 +138,9 @@ class ANGroupMachineVertex(
 
     def _reserve_memory_regions(self, spec):
         """ reserve dsg regions
-        
+
         :param spec: dsg spec
-        :rtype: None 
+        :rtype: None
         """
         # reserve system region
         spec.reserve_memory_region(
@@ -160,11 +161,11 @@ class ANGroupMachineVertex(
 
     def _fill_in_params_region(self, spec, machine_graph, routing_info):
         """ fills in the dsg region for params
-        
+
         :param spec: dsg spec
-        :param machine_graph: machine graph 
+        :param machine_graph: machine graph
         :param routing_info: routing info
-        :rtype: None 
+        :rtype: None
         """
         spec.switch_write_focus(self.REGIONS.PARAMETERS.value)
 
@@ -194,11 +195,11 @@ class ANGroupMachineVertex(
 
     def _fill_in_key_map_region(self, spec, machine_graph, routing_info):
         """ fill in the key map region
-        
+
         :param spec: dsg spec
-        :param machine_graph: machine graph 
+        :param machine_graph: machine graph
         :param routing_info: routing info
-        :rtype: None 
+        :rtype: None
         """
         spec.switch_write_focus(self.REGIONS.KEY_MAP.value)
 
@@ -221,9 +222,8 @@ class ANGroupMachineVertex(
         key_and_mask_table.sort(order='key')
         spec.write_array(key_and_mask_table.view("<u4"))
 
-
     @inject_items({
-        "machine_time_step": "MachineTimeStep",
+        "time_period_map": "MachineTimeStepMap",
         "time_scale_factor": "TimeScaleFactor",
         "routing_info": "MemoryRoutingInfos",
         "tags": "MemoryTags",
@@ -233,10 +233,10 @@ class ANGroupMachineVertex(
     @overrides(
         AbstractGeneratesDataSpecification.generate_data_specification,
         additional_arguments=[
-            "machine_time_step", "time_scale_factor","routing_info", "tags",
+            "time_period_map", "time_scale_factor", "routing_info", "tags",
             "placements", "machine_graph"])
     def generate_data_specification(
-            self, spec, placement, machine_time_step,
+            self, spec, placement, time_period_map,
             time_scale_factor, routing_info, tags, placements, machine_graph):
 
         # reserve regions
@@ -246,7 +246,7 @@ class ANGroupMachineVertex(
         spec.switch_write_focus(self.REGIONS.SYSTEM.value)
         spec.write_array(
             simulation_utilities.get_simulation_header_array(
-                self.get_binary_file_name(), machine_time_step,
+                self.get_binary_file_name(), time_period_map[self],
                 time_scale_factor))
 
         # app level regions fill in

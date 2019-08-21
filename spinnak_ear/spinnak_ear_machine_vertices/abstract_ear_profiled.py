@@ -1,5 +1,5 @@
-from spinn_front_end_common.interface.profiling import AbstractHasProfileData, \
-    profile_utils, ProfileData
+from spinn_front_end_common.interface.profiling import \
+    AbstractHasProfileData, profile_utils, ProfileData
 from six import add_metaclass
 from spinn_utilities.abstract_base import AbstractBase
 from spinn_utilities.overrides import overrides

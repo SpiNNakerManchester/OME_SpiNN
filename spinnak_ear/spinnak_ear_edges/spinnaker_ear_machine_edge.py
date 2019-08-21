@@ -5,7 +5,6 @@ from spynnaker.pyNN.models.abstract_models import AbstractFilterableEdge
 
 class SpiNNakEarMachineEdge(MachineEdge, AbstractFilterableEdge):
     """ Machine Edge for SpiNNakear comms, to ensure not filterable
-    
     """
 
     def __init__(

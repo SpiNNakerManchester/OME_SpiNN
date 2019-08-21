@@ -1,13 +1,21 @@
 /*
- ============================================================================
- Name        : SpiNNakEar_IHCAN.c
- Author      : Robert James
- Version     : 1.0
- Description : Inner Hair Cell + Auditory Nerve model for use in SpiNNakEar
-               system
- ============================================================================
+ * Copyright (c) 2019-2020 The University of Manchester
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+//! Inner Hair Cell + Auditory Nerve model for use in SpiNNakEar system
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdfix.h>
@@ -59,11 +67,11 @@ void key_search_and_send(uint spike, uint null_a) {
         entry = key_mask_table.entries[imid];
         if ((spike & entry.mask) == entry.key){
             int neuron_id = entry.offset + (spike & ~entry.mask);
-            if(neuron_id >= parameters.n_atoms){
+            if (neuron_id >= parameters.n_atoms) {
                 log_error("incorrect neuron ID generated %d", neuron_id);
                 rt_error(RTE_SWERR);
             }
-            while(!spin1_send_mc_packet(
+            while (!spin1_send_mc_packet(
                     parameters.key | neuron_id, PARAM_FILLER, NO_PAYLOAD)){
                 spin1_delay_us(1);
             }

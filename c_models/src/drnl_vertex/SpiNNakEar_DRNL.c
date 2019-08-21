@@ -1,20 +1,30 @@
 /*
- ============================================================================
- Name        : SpiNNakEar_DRNL.c
- Author      : Robert James
- Version     : 1.0
- Description : Dual Resonance Non-Linear filterbank cochlea model for use in
-               SpiNNakEar system
- ============================================================================
+ * Copyright (c) 2019-2020 The University of Manchester
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
+//!  Dual Resonance Non-Linear filterbank cochlea model for use in
+//! SpiNNakEar system
 
 #include "DRNL_SpiNN.h"
 #include "log.h"
 #include <data_specification.h>
 #include <profiler.h>
 #include <simulation.h>
-#include <recording.h>
 #include <debug.h>
+#include "neuron/neuron_recording.h"
 #include "neuron/synapses.c"
 #include "neuron/spike_processing.c"
 #include "neuron/population_table/population_table_binary_search_impl.c"
@@ -38,7 +48,6 @@ filter_params_struct filter_params;
 
 // params
 double max_rate;
-uint test_dma;
 uint seg_index;
 uint read_switch;
 uint write_switch;
@@ -47,10 +56,6 @@ uint index_x;
 uint index_y;
 int mc_seg_idx;
 uint_float_union MC_union;
-uint moc_buffer_index = 0;
-uint moc_i = 0;
-uint moc_write_switch = 0;
-uint moc_sample_count = 0;
 
 double moc;
 double moc_now_1;
@@ -81,15 +86,12 @@ float *dtcm_buffer_a;
 float *dtcm_buffer_b;
 double *dtcm_buffer_x;
 double *dtcm_buffer_y;
-double *dtcm_buffer_moc_x;
-double *dtcm_buffer_moc_y;
 
 // sdram edge buffer.
 double *sdram_out_buffer;
 
 // multicast bits
 double moc_spike_weight = 0;
-uint32_t moc_seg_output_n_bytes;
 
 // recording interface demands
 uint32_t recording_flags;
@@ -134,57 +136,31 @@ void data_write(uint arg_1, uint arg_2)
 	}
 
 	double *dtcm_buffer_out;
-	double *dtcm_buffer_moc;
 	uint out_index;
-	
-	if (test_dma == TRUE) {
-		if (!write_switch) {
-			out_index = index_x;
-			dtcm_buffer_out = dtcm_buffer_x;
-		}
-		else {
-			out_index = index_y;
-			dtcm_buffer_out = dtcm_buffer_y;
-		}
 
-        spin1_dma_transfer(
-            DMA_WRITE, &sdram_out_buffer[out_index],
-            dtcm_buffer_out, DMA_WRITE,
-            parameters.seq_size * sizeof(double));
+    if (!write_switch) {
+        out_index = index_x;
+        dtcm_buffer_out = dtcm_buffer_x;
+    }
+    else {
+        out_index = index_y;
+        dtcm_buffer_out = dtcm_buffer_y;
+    }
 
-        //flip write buffers
-        write_switch = !write_switch;
+    spin1_dma_transfer(
+        DMA_WRITE, &sdram_out_buffer[out_index],
+        dtcm_buffer_out, DMA_WRITE,
+        parameters.seq_size * sizeof(double));
 
-		if (moc_i >= MOC_BUFFER_SIZE) {
-
-		    if (!moc_write_switch){
-		        dtcm_buffer_moc=dtcm_buffer_moc_x;
-		    }
-		    else{
-		        dtcm_buffer_moc=dtcm_buffer_moc_y;
-		    }
-
-            if (recording_is_channel_enabled(
-                    recording_flags, MOC_RECORDING_REGION)){
-                recording_record(
-                    MOC_RECORDING_REGION, dtcm_buffer_moc,
-                    moc_seg_output_n_bytes);
-            }
-
-            //flip moc_write buffers
-            moc_write_switch = !moc_write_switch;
-            moc_i = 0;
-        }
-	}
+    //flip write buffers
+    write_switch = !write_switch;
 }
 
 //! \brief processes a channel
 //! \param[in] out_buffer: where to store results
 //! \param[in] in_buffer: in data
-//! \param[in] mac_out_buffer: recording moc values
 //! \return segment offset
-uint process_chan(
-        double *out_buffer, float *in_buffer, double *moc_out_buffer) {
+uint process_chan(double *out_buffer, float *in_buffer) {
 	uint segment_offset =
 	    parameters.seq_size * (
 	        (seg_index - 1) & (parameters.n_buffers_in_sdram - 1));
@@ -289,13 +265,9 @@ uint process_chan(
 		//save to buffer
 		out_buffer[i] = linout2 + non_linout_2b;
 
-		//if recording MOC
-		moc_sample_count++;
-		if (moc_sample_count == parameters.moc_resample_factor){
-		    moc_out_buffer[moc_i] = moc;
-		    moc_i++;
-		    moc_sample_count = 0;
-		}
+		neuron_recording_set_double_recorded_param(
+		    MOC_RECORDING_REGION, 0, moc);
+		neuron_recording_matrix_record(time);
 	}
 	return segment_offset;
 }
@@ -308,25 +280,17 @@ void process_handler(uint null_a, uint null_b) {
     use(null_a);
 	use(null_b);
 
-    double *dtcm_moc;
     seg_index++;
-
-    if (!moc_write_switch){
-        dtcm_moc = dtcm_buffer_moc_x;
-    }
-    else {
-        dtcm_moc = dtcm_buffer_moc_y;
-    }
 
     //choose current buffers
     if (!read_switch && !write_switch){
-        index_x = process_chan(dtcm_buffer_x, dtcm_buffer_b, dtcm_moc);
+        index_x = process_chan(dtcm_buffer_x, dtcm_buffer_b);
     } else if (!read_switch && write_switch){
-        index_y = process_chan(dtcm_buffer_y, dtcm_buffer_b, dtcm_moc);
+        index_y = process_chan(dtcm_buffer_y, dtcm_buffer_b);
     } else if (read_switch && !write_switch){
-        index_x = process_chan(dtcm_buffer_x, dtcm_buffer_a, dtcm_moc);
+        index_x = process_chan(dtcm_buffer_x, dtcm_buffer_a);
     } else{
-        index_y = process_chan(dtcm_buffer_y, dtcm_buffer_a, dtcm_moc);
+        index_y = process_chan(dtcm_buffer_y, dtcm_buffer_a);
     }
     spin1_trigger_user_event(DRNL_FILLER_ARG, DRNL_FILLER_ARG);
 }
@@ -362,41 +326,39 @@ void data_read(uint mc_key, uint payload) {
         MC_union.u = payload;
 
         //collect the next segment of samples and copy into DTCM
-        if (test_dma == TRUE) {
-            mc_seg_idx++;
+        mc_seg_idx++;
 
-            #ifdef PROFILE
+        #ifdef PROFILE
+        if (mc_seg_idx >= parameters.seq_size) {
+            profiler_write_entry_disable_irq_fiq(
+                PROFILER_ENTER | PROFILER_TIMER);
+        }
+        #endif
+
+        //assign receive buffer
+        if (!read_switch) {
+            dtcm_buffer_a[mc_seg_idx-1] = MC_union.f;
+
+            //completed filling a segment of input values
             if (mc_seg_idx >= parameters.seq_size) {
-                profiler_write_entry_disable_irq_fiq(
-                    PROFILER_ENTER | PROFILER_TIMER);
+                mc_seg_idx = 0;
+                read_switch = 1;
+                spin1_schedule_callback(
+                    process_handler, DRNL_FILLER_ARG, DRNL_FILLER_ARG,
+                    PROCESS_HANDLER_PRIORITY);
             }
-            #endif
+        }
+        else {
+            dtcm_buffer_b[mc_seg_idx-1] = MC_union.f;
 
-            //assign receive buffer
-            if (!read_switch) {
-                dtcm_buffer_a[mc_seg_idx-1] = MC_union.f;
-
-                //completed filling a segment of input values
-                if (mc_seg_idx >= parameters.seq_size) {
-                    mc_seg_idx = 0;
-                    read_switch = 1;
-                    spin1_schedule_callback(
-                        process_handler, DRNL_FILLER_ARG, DRNL_FILLER_ARG,
-                        PROCESS_HANDLER_PRIORITY);
-                }
-            }
-            else {
-                dtcm_buffer_b[mc_seg_idx-1] = MC_union.f;
-
-                //completed filling a segment of input values
-                if (mc_seg_idx >= parameters.seq_size)
-                {
-                    mc_seg_idx = 0;
-                    read_switch = 0;
-                    spin1_schedule_callback(
-                        process_handler, DRNL_FILLER_ARG, DRNL_FILLER_ARG,
-                        PROCESS_HANDLER_PRIORITY);
-                }
+            //completed filling a segment of input values
+            if (mc_seg_idx >= parameters.seq_size)
+            {
+                mc_seg_idx = 0;
+                read_switch = 0;
+                spin1_schedule_callback(
+                    process_handler, DRNL_FILLER_ARG, DRNL_FILLER_ARG,
+                    PROCESS_HANDLER_PRIORITY);
             }
         }
     }
@@ -411,6 +373,15 @@ void count_ticks(uint null_a, uint null_b) {
     use(null_b);
 
     time++;
+
+    // make the synapses set off the neuron add input method
+    synapses_do_timestep_update(time);
+
+    // update buffered out stuff
+    if (recording_flags > 0) {
+        neuron_recording_do_timestep_update(time);
+    }
+
     // If a fixed number of simulation ticks are specified and these have passed
     if (infinite_run != TRUE && time >= simulation_ticks) {
 
@@ -420,7 +391,7 @@ void count_ticks(uint null_a, uint null_b) {
          // Subtract 1 from the time so this tick gets done again on the next
         // run
         time -= 1;
-        recording_finalise();
+        neuron_recording_finalise();
         simulation_ready_to_read();
         return;
     }
@@ -457,13 +428,6 @@ static inline bool app_init(uint32_t *timer_period) {
         data_specification_get_region(DOUBLE_PARAMS, data_address),
         sizeof(double_parameters_struct));
 
-    if (!recording_initialize(
-            data_specification_get_region(RECORDING, data_address),
-            &recording_flags)) {
-        log_error("failed to set up recording");
-        return false;
-    }
-
     log_info("moc resample factor =%d\n",  parameters.moc_resample_factor);
 
 	log_info("ome_data_key=%d\n", parameters.ome_data_key);
@@ -487,22 +451,16 @@ static inline bool app_init(uint32_t *timer_period) {
 	//DTCM output buffers
 	dtcm_buffer_x = (double *) sark_alloc (parameters.seq_size, sizeof(double));
 	dtcm_buffer_y = (double *) sark_alloc (parameters.seq_size, sizeof(double));
-    dtcm_buffer_moc_x = (double *) sark_alloc (MOC_BUFFER_SIZE, sizeof(double));
-	dtcm_buffer_moc_y = (double *) sark_alloc (MOC_BUFFER_SIZE, sizeof(double));
 
     // if any of the buffers failed to be allocated, go boom
 	if (dtcm_buffer_a == NULL || dtcm_buffer_b == NULL ||
 	        dtcm_buffer_x == NULL ||dtcm_buffer_y == NULL ||
-	        dtcm_buffer_moc_x == NULL || dtcm_buffer_moc_y == NULL ||
 	        sdram_out_buffer == NULL) {
 
-		test_dma = FALSE;
 		log_info("error - cannot allocate 1 or more of the buffers\n");
 		return false;
 	}
 	else {
-		test_dma = TRUE;
-
 		// initialize sections of DTCM, system RAM and SDRAM
 		for (int i = 0; i < parameters.seq_size; i++) {
 			dtcm_buffer_a[i] = 0;
@@ -514,11 +472,6 @@ static inline bool app_init(uint32_t *timer_period) {
 			dtcm_buffer_y[i] = 0;
 		}
 
-        for (int i = 0; i < MOC_BUFFER_SIZE; i++) {
-            dtcm_buffer_moc_x[i] = 0;
-			dtcm_buffer_moc_y[i] = 0;
-		}
-
         // clear sdram space
         int steps = sdram_params.sdram_edge_size / sizeof(double);
 		for (int i = 0; i < steps; i++) {
@@ -526,7 +479,6 @@ static inline bool app_init(uint32_t *timer_period) {
 		}
 
         mc_seg_idx = 0;
-        moc_seg_output_n_bytes = MOC_BUFFER_SIZE * sizeof(double);
 	}
 
     spin1_memcpy(
@@ -612,6 +564,13 @@ static inline bool app_init(uint32_t *timer_period) {
     log_info("initialising the bit field region");
     if (!bit_field_filter_initialise(
             data_specification_get_region(BIT_FIELD_FILTER, data_address))){
+        return false;
+    }
+
+    if (!neuron_recording_initialise(
+            data_specification_get_region(NEURON_RECORDING, data_address),
+            &recording_flags, N_NEURONS)) {
+        log_error("failed to set up recording");
         return false;
     }
 
