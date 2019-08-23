@@ -131,7 +131,7 @@ void neuron_add_inputs(
 void data_write(uint arg_1, uint arg_2)
 {
 	if (arg_1 == 0 && arg_2 == 0){
-	    _setup_synaptic_dma_read();
+	    setup_synaptic_dma_read();
 	    return;
 	}
 
