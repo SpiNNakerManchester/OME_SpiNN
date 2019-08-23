@@ -254,9 +254,7 @@ class SpiNNakEarApplicationVertex(
 
         # safety stuff
         config = globals_variables.get_simulator().config
-        self._time_scale_factor = helpful_functions.read_config_int(
-            config, "Machine", "time_scale_factor")
-        if (self._model.fs / self._time_scale_factor >
+        if (self._model.fs / time_scale_factor >
                 self.MAX_TIME_SCALE_FACTOR_RATIO):
             raise Exception(self.FREQUENCY_ERROR)
 
