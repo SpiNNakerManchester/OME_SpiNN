@@ -123,16 +123,16 @@
 
 //! \brief data spec regions
 typedef enum regions {
-    SYSTEM,
-    PARAMS,
-    CILIA_PARAMS,
-    INNER_EAR_PARAMS,
-    DT_BASED_PARAMS,
-    RANDOM_SEEDS,
-    NEURON_RECORDING,
-    SDRAM_EDGE_ADDRESS,
-    PROFILER,
-    PROVENANCE,
+    SYSTEM = 0,
+    PARAMS = 1,
+    CILIA_PARAMS = 2,
+    INNER_EAR_PARAMS = 3,
+    DT_BASED_PARAMS = 4,
+    RANDOM_SEEDS = 5,
+    NEURON_RECORDING = 6,
+    SDRAM_EDGE_ADDRESS = 7,
+    PROFILER = 8,
+    PROVENANCE = 9,
 } regions;
 
 //! \brief recording regions

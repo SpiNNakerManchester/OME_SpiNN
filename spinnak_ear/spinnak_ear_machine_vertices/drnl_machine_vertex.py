@@ -114,8 +114,13 @@ class DRNLMachineVertex(
     # n bytes for filter param region
     FILTER_PARAMS_IN_BYTES = N_FILTER_PARAMS * DataType.FLOAT_64.size
 
-    # moc recording id
-    MOC_RECORDING_REGION_ID = 0
+    # recording regions
+    RECORDING_REGIONS = Enum(
+        value="RECORDING_REGIONS",
+        names=[("DRNL_SPIKES_RECORDING_REGION_ID", 0),
+               ("MOC_RECORDING_REGION_ID", 1),
+               ("N_RECORDING_REGIONS", 2)]
+    )
 
     # matrix weight scale
     GLOBAL_WEIGHT_SCALE = 1.0
@@ -134,13 +139,19 @@ class DRNLMachineVertex(
     MOC_BUFFER_SIZE = 10
 
     MOC = "moc"
+    DRNL_SPIKES = "spikes"
 
     # the params recordable from a drnl vertex
-    RECORDABLES = [MOC]
+    # HACK!
+    # the drnl spikes is there just for recording limitations. it can never
+    # be set as the application vertex has hidden it from the end user
+    RECORDABLES = [DRNL_SPIKES, MOC]
 
     # recordable units NOTE RJ and ABS have no idea, but we're going with
     # meters for completeness on the MOC.
-    RECORDABLE_UNITS = {MOC: 'meters'}
+    RECORDABLE_UNITS = {
+        MOC: 'meters',
+        DRNL_SPIKES: 'spikes'}
 
     # recording region id for the moc
     MOC_RECORDABLE_REGION_ID = 0
@@ -482,7 +493,7 @@ class DRNLMachineVertex(
         spec.write_value(self.N_SYNAPSE_TYPES)
 
         # write moc resample factor
-        spec.write_value(self._fs / 1000.0)
+        spec.write_value(self._fs / constants.MICRO_TO_MILLISECOND_CONVERSION)
 
     def _write_double_params_region(self, spec):
         """ writes the parameters which are double types
@@ -637,9 +648,10 @@ class DRNLMachineVertex(
 
     @overrides(AbstractReceiveBuffersToHost.get_recorded_region_ids)
     def get_recorded_region_ids(self):
-        return [self.MOC_RECORDING_REGION_ID]
+        return [self.RECORDING_REGIONS.DRNL_SPIKES_RECORDING_REGION_ID.value,
+                self.RECORDING_REGIONS.MOC_RECORDING_REGION_ID.value]
 
     @overrides(AbstractReceiveBuffersToHost.get_recording_region_base_address)
     def get_recording_region_base_address(self, txrx, placement):
         return helpful_functions.locate_memory_region_for_placement(
-            placement, self.REGIONS.RECORDING.value, txrx)
+            placement, self.REGIONS.NEURON_RECORDING.value, txrx)

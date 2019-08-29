@@ -226,10 +226,10 @@ class IHCANMachineVertex(
                ('INNER_EAR_PARAMS', 3),
                ('DT_BASED_PARAMS', 4),
                ('RANDOM_SEEDS', 5),
-               ('NEURON_RECORDING', 7),
-               ('SDRAM_EDGE', 8),
-               ('PROFILE', 9),
-               ('PROVENANCE', 10)])
+               ('NEURON_RECORDING', 6),
+               ('SDRAM_EDGE', 7),
+               ('PROFILE', 8),
+               ('PROVENANCE', 9)])
 
     # provenance items
     EXTRA_PROVENANCE_DATA_ENTRIES = Enum(
@@ -664,4 +664,4 @@ class IHCANMachineVertex(
     @overrides(AbstractReceiveBuffersToHost.get_recording_region_base_address)
     def get_recording_region_base_address(self, txrx, placement):
         return helpful_functions.locate_memory_region_for_placement(
-            placement, self.REGIONS.RECORDING.value, txrx)
+            placement, self.REGIONS.NEURON_RECORDING.value, txrx)

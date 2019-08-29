@@ -263,6 +263,10 @@ class SpiNNakEarApplicationVertex(
             MICRO_TO_SECOND_CONVERSION *
             self._model.seq_size / self._model.fs)
 
+    @overrides(AbstractAcceptsIncomingSynapses.gen_on_machine)
+    def gen_on_machine(self, vertex_slice):
+        return self.__synapse_manager.gen_on_machine(vertex_slice)
+
     def calculate_n_channels(self, sample_time):
         n_fibres_per_ihcan_core = abs(int(math.floor((
             (sample_time / MICRO_TO_SECOND_CONVERSION) -
@@ -289,7 +293,7 @@ class SpiNNakEarApplicationVertex(
             self._change_requires_data_generation = True
 
     def get_units(self, variable):
-        if variable == DRNLMachineVertex.MOC:
+        if variable in DRNLMachineVertex.RECORDABLES:
             return DRNLMachineVertex.RECORDABLE_UNITS[variable]
         elif variable in IHCANMachineVertex.RECORDABLES:
             return IHCANMachineVertex.RECORDABLE_UNITS[variable]
@@ -873,7 +877,9 @@ class SpiNNakEarApplicationVertex(
     @overrides(AbstractNeuronRecordable.get_recordable_variables)
     def get_recordable_variables(self):
         recordables = list()
-        recordables.extend(DRNLMachineVertex.RECORDABLES)
+        # don't take the drnl spikes, as there's only 1 api for spikes, and the
+        # drnl spikes are only there for the recording limitations
+        recordables.append(DRNLMachineVertex.MOC)
         recordables.extend(IHCANMachineVertex.RECORDABLES)
         return recordables
 
