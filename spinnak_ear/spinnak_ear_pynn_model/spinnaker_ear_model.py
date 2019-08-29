@@ -34,9 +34,6 @@ class SpiNNakEar(AbstractPyNNModel):
     # audio segment size
     SEG_SIZE = 8
 
-    # biggest number of neurons for the ear model
-    MAX_NEURON_SIZE = 30000.0
-
     # default params
     DEFAULT_PARAMS = {
         'audio_input': None,
@@ -61,7 +58,8 @@ class SpiNNakEar(AbstractPyNNModel):
         'resample_factor': _DEFAULT_RESAMPLE_FACTOR,
         # auto generate from thesis (robert James's)
         'seq_size': _DEFAULT_SEG_SIZE,
-        "n_buffers_in_sdram_total": _DEFAULT_N_BUFFERS_IN_SDRAM_TOTAL
+        "n_buffers_in_sdram_total": _DEFAULT_N_BUFFERS_IN_SDRAM_TOTAL,
+        'n_channels': _DEFAULT_N_CHANNELS
     }
 
     NAME = "SpikeSourceSpiNNakEar"
@@ -108,7 +106,9 @@ class SpiNNakEar(AbstractPyNNModel):
         #
         "_n_buffers_in_sdram_total",
         #
-        "_app_vertex"
+        "_app_vertex",
+        #
+        "_n_channels"
     ]
 
     def __init__(
@@ -131,12 +131,14 @@ class SpiNNakEar(AbstractPyNNModel):
             resample_factor=DEFAULT_PARAMS['resample_factor'],
             seq_size=DEFAULT_PARAMS['seq_size'],
             n_buffers_in_sdram_total=DEFAULT_PARAMS[
-                'n_buffers_in_sdram_total']):
+                'n_buffers_in_sdram_total'],
+            n_channels=DEFAULT_PARAMS['n_channels']):
         self._fs = fs
         self._pole_freqs = pole_freqs
         self._param_file = param_file
         self._ear_index = ear_index
         self._scale = scale
+        self._n_channels = n_channels
         self._model_name = self.NAME
         self._n_lsr_per_ihc = n_lsr_per_ihc
         self._n_msr_per_ihc = n_msr_per_ihc
@@ -180,33 +182,33 @@ class SpiNNakEar(AbstractPyNNModel):
     def create_vertex(self, n_neurons, label, constraints):
         self._app_vertex = SpiNNakEarApplicationVertex(
             n_neurons,  constraints, label, self, self._profile,
-            globals_variables.get_simulator().time_scale_factor)
+            globals_variables.get_simulator().time_scale_factor,
+            self._n_channels)
         return self._app_vertex
 
-    @property
-    def incoming_neurons(self):
-        time_scale_factor = globals_variables.get_simulator().time_scale_factor
-        atoms_per_row = \
-            self._app_vertex.process_internal_numbers(time_scale_factor)
-        n_channels = self._app_vertex.calculate_n_channels(
-            time_scale_factor / self._fs)
-        _, n_dnrls, __ = self._app_vertex.calculate_n_atoms(
-            atoms_per_row, self._max_input_to_aggregation_group, n_channels,
-            self._n_ihc)
-        return n_dnrls
+    def calculate_n_atoms(self):
+        # figure how many hair bits there are per hair cell
+        n_fibres_per_ihc = (
+            self._n_lsr_per_ihc + self._n_msr_per_ihc + self._n_hsr_per_ihc)
 
-    @property
-    def outgoing_neurons(self):
-        time_scale_factor = globals_variables.get_simulator().time_scale_factor
-        atoms_per_row = \
-            self._app_vertex.process_internal_numbers(time_scale_factor)
-        n_channels = self._app_vertex.calculate_n_channels(
-            time_scale_factor / self._fs)
-        _, __, n_final_agg_groups = \
-            SpiNNakEarApplicationVertex.calculate_n_atoms(
+        # figure how many hair bits per ihcan core
+        n_fibres_per_ihcan_core = \
+            SpiNNakEarApplicationVertex.fibres_per_ihcan_core(
+                globals_variables.get_simulator().time_scale_factor / self._fs)
+
+        # figure out how many atoms are aggregated during the aggregation tree
+        atoms_per_row = SpiNNakEarApplicationVertex.calculate_atoms_per_row(
+            self._n_channels, n_fibres_per_ihc, n_fibres_per_ihcan_core,
+            self._max_input_to_aggregation_group)
+
+        # figure out atoms
+        atoms, _, _ = \
+            SpiNNakEarApplicationVertex.calculate_n_atoms_for_each_vertex_type(
                 atoms_per_row, self._max_input_to_aggregation_group,
-                n_channels, self._n_ihc)
-        return n_final_agg_groups
+                self._n_channels, self._n_ihc)
+
+        # return atoms
+        return atoms
 
     @property
     def n_buffers_in_sdram_total(self):
@@ -227,10 +229,6 @@ class SpiNNakEar(AbstractPyNNModel):
     @property
     def ihcan_fibre_random_seed(self):
         return self._ihcan_fibre_random_seed
-
-    @staticmethod
-    def spinnakear_size_calculator(scale=FULL_SCALE):
-        return int(SpiNNakEar.MAX_NEURON_SIZE * scale)
 
     @property
     def model_name(self):

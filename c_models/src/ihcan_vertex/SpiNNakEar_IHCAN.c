@@ -508,7 +508,7 @@ bool app_init(uint32_t *timer_period)
 	// set up recording
 	if (!neuron_recording_initialise(
             data_specification_get_region(NEURON_RECORDING, data_address),
-            &recording_flags, parameters.number_fibres * parameters.seg_size)) {
+            &recording_flags, parameters.number_fibres)) {
         log_error("failed to set up recording");
         return false;
     }

@@ -186,12 +186,15 @@ class SpiNNakEarApplicationVertex(
     # max audio frequency supported
     DEFAULT_MAX_AUDIO_FREQUENCY = 20000
 
+    # biggest number of neurons for the ear model
+    MAX_NEURON_SIZE = 30000.0
+
     # min audio frequency supported
     DEFAULT_MIN_AUDIO_FREQUENCY = 30
 
     def __init__(
             self, n_neurons, constraints, label, model, profile,
-            time_scale_factor):
+            time_scale_factor, n_channels):
         # Superclasses
         ApplicationVertex.__init__(self, label, constraints)
         AbstractAcceptsIncomingSynapses.__init__(self)
@@ -205,6 +208,8 @@ class SpiNNakEarApplicationVertex(
         self._profile = profile
         self._remapping_required = True
         self._synapse_dynamics = None
+        self._n_fibres_per_ihc = None
+        self._n_group_tree_rows = None
         self._ihcan_vertices = list()
         self._drnl_vertices = list()
         self._final_agg_vertices = list()
@@ -214,17 +219,18 @@ class SpiNNakEarApplicationVertex(
 
         # calculate n fibres per ihcan core
         sample_time = time_scale_factor / self._model.fs
-        self._n_fibres_per_ihcan_core = abs(int(
-            math.floor(((sample_time / MICRO_TO_SECOND_CONVERSION) -
-                        self.CURVE_ONE) / self.CURVE_TWO)))
 
-        self._n_channels = int(n_neurons / self._n_fibres_per_ihcan_core)
+        # how many channels
+        self._n_channels = n_channels
 
         # process pole freqs
         self._pole_freqs = self._process_pole_freqs()
 
+        # how many fibres / atoms ran on each ihcan core
+        self._n_fibres_per_ihcan_core = self.fibres_per_ihcan_core(sample_time)
+
         # process all the other internal numbers
-        atoms_per_row = self.process_internal_numbers(time_scale_factor)
+        atoms_per_row = self.process_internal_numbers()
 
         # read in param file if needed
         self._process_param_file(atoms_per_row)
@@ -239,7 +245,7 @@ class SpiNNakEarApplicationVertex(
             IHCANMachineVertex.RECORDABLES,
             IHCANMachineVertex.get_matrix_scalar_data_types(),
             IHCANMachineVertex.get_matrix_output_data_types(),
-            self._n_dnrls * self._model.n_ihc)
+            self._n_dnrls * self._n_fibres_per_ihcan_core)
 
         # bool for if state has changed.
         self._change_requires_mapping = True
@@ -248,12 +254,11 @@ class SpiNNakEarApplicationVertex(
         self._has_reset_last = True
 
         # safety check
-        # if self._n_atoms != n_neurons:
-        #    raise ConfigurationException(
-        #        self.N_NEURON_ERROR.format(n_neurons, self._n_atoms))
+        if self._n_atoms != n_neurons:
+            raise ConfigurationException(
+                self.N_NEURON_ERROR.format(n_neurons, self._n_atoms))
 
         # safety stuff
-        config = globals_variables.get_simulator().config
         if (self._model.fs / time_scale_factor >
                 self.MAX_TIME_SCALE_FACTOR_RATIO):
             raise Exception(self.FREQUENCY_ERROR)
@@ -263,15 +268,18 @@ class SpiNNakEarApplicationVertex(
             MICRO_TO_SECOND_CONVERSION *
             self._model.seq_size / self._model.fs)
 
+    @staticmethod
+    def fibres_per_ihcan_core(sample_time):
+        # how many fibras / atoms ran on each ihcan core
+        return abs(int(
+            math.floor(
+                ((sample_time / MICRO_TO_SECOND_CONVERSION) -
+                 SpiNNakEarApplicationVertex.CURVE_ONE) /
+                SpiNNakEarApplicationVertex.CURVE_TWO)))
+
     @overrides(AbstractAcceptsIncomingSynapses.gen_on_machine)
     def gen_on_machine(self, vertex_slice):
         return self.__synapse_manager.gen_on_machine(vertex_slice)
-
-    def calculate_n_channels(self, sample_time):
-        n_fibres_per_ihcan_core = abs(int(math.floor((
-            (sample_time / MICRO_TO_SECOND_CONVERSION) -
-            self.CURVE_ONE) / self.CURVE_TWO)))
-        return int(self._n_atoms / n_fibres_per_ihcan_core)
 
     @overrides(
         AbstractApplicationSupportsAutoPauseAndResume.
@@ -312,7 +320,7 @@ class SpiNNakEarApplicationVertex(
                 self._ome_indices = pre_gen_vars['ome_indices']
             except Exception:
                 self._n_atoms, self._n_dnrls, self._n_final_agg_groups = \
-                    self.calculate_n_atoms(
+                    self.calculate_n_atoms_for_each_vertex_type(
                         atoms_per_row,
                         self._model.max_input_to_aggregation_group,
                         self._n_channels, self._model.n_ihc)
@@ -320,11 +328,11 @@ class SpiNNakEarApplicationVertex(
                 self._save_pre_gen_vars(self._model.param_file)
         else:
             self._n_atoms, self._n_dnrls, self._n_final_agg_groups = \
-                self.calculate_n_atoms(
+                self.calculate_n_atoms_for_each_vertex_type(
                     atoms_per_row, self._model.max_input_to_aggregation_group,
                     self._n_channels, self._model.n_ihc)
 
-    def process_internal_numbers(self, time_scale_factor):
+    def process_internal_numbers(self):
 
         # ear hair frequency bits in total per inner ear channel
         self._n_fibres_per_ihc = (
@@ -799,7 +807,7 @@ class SpiNNakEarApplicationVertex(
         return self._n_atoms
 
     @staticmethod
-    def calculate_n_atoms(
+    def calculate_n_atoms_for_each_vertex_type(
             n_group_tree_rows, max_input_to_aggregation_group, n_channels,
             n_ihc):
         # ome atom
