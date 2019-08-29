@@ -15,8 +15,7 @@ from spinn_front_end_common.abstract_models import AbstractChangableAfterRun, \
 from spinn_front_end_common.abstract_models.\
     abstract_application_supports_auto_pause_and_resume import \
     AbstractApplicationSupportsAutoPauseAndResume
-from spinn_front_end_common.utilities import \
-    globals_variables, helpful_functions
+from spinn_front_end_common.utilities import globals_variables
 from spinn_front_end_common.utilities.constants import \
     MICRO_TO_SECOND_CONVERSION
 from spinn_front_end_common.utilities.exceptions import ConfigurationException
