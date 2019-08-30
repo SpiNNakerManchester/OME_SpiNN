@@ -20,7 +20,6 @@ class SpiNNakEar(AbstractPyNNModel):
     _DEFAULT_N_LSR_PER_IHC = 2
     _DEFAULT_N_MSR_PER_IHC = 2
     _DEFAULT_N_HSR_PER_IHC = 6
-    _DEFAULT_N_CHANNELS = 3000
     _DEFAULT_AUDIO_SAMPLING_FREQUENCY = 22050.0
     _DEFAULT_RANDOM_SEED = 44444
     _DEFAULT_RESAMPLE_FACTOR = 1
@@ -59,7 +58,6 @@ class SpiNNakEar(AbstractPyNNModel):
         # auto generate from thesis (robert James's)
         'seq_size': _DEFAULT_SEG_SIZE,
         "n_buffers_in_sdram_total": _DEFAULT_N_BUFFERS_IN_SDRAM_TOTAL,
-        'n_channels': _DEFAULT_N_CHANNELS
     }
 
     NAME = "SpikeSourceSpiNNakEar"
@@ -80,7 +78,7 @@ class SpiNNakEar(AbstractPyNNModel):
         # human readable name of model
         "_model_name",
         # how many cores for ihc
-        "_n_ihc",
+        "_n_fibres_per_ihc",
         # how many lsrs in each ihcan
         '_n_lsr_per_ihc',
         # how many msr per ihc
@@ -106,9 +104,7 @@ class SpiNNakEar(AbstractPyNNModel):
         #
         "_n_buffers_in_sdram_total",
         #
-        "_app_vertex",
-        #
-        "_n_channels"
+        "_app_vertex"
     ]
 
     def __init__(
@@ -131,19 +127,18 @@ class SpiNNakEar(AbstractPyNNModel):
             resample_factor=DEFAULT_PARAMS['resample_factor'],
             seq_size=DEFAULT_PARAMS['seq_size'],
             n_buffers_in_sdram_total=DEFAULT_PARAMS[
-                'n_buffers_in_sdram_total'],
-            n_channels=DEFAULT_PARAMS['n_channels']):
+                'n_buffers_in_sdram_total']):
         self._fs = fs
         self._pole_freqs = pole_freqs
         self._param_file = param_file
         self._ear_index = ear_index
         self._scale = scale
-        self._n_channels = n_channels
         self._model_name = self.NAME
         self._n_lsr_per_ihc = n_lsr_per_ihc
         self._n_msr_per_ihc = n_msr_per_ihc
         self._n_hsr_per_ihc = n_hsr_per_ihc
-        self._n_ihc = sum([n_lsr_per_ihc, n_msr_per_ihc, n_hsr_per_ihc])
+        self._n_fibres_per_ihc = sum(
+            [n_lsr_per_ihc, n_msr_per_ihc, n_hsr_per_ihc])
         self._min_audio_frequency = min_audio_frequency
         self._max_audio_frequency = max_audio_frequency
         self._ihcan_fibre_random_seed = ihcan_fibre_random_seed
@@ -182,30 +177,32 @@ class SpiNNakEar(AbstractPyNNModel):
     def create_vertex(self, n_neurons, label, constraints):
         self._app_vertex = SpiNNakEarApplicationVertex(
             n_neurons,  constraints, label, self, self._profile,
-            globals_variables.get_simulator().time_scale_factor,
-            self._n_channels)
+            globals_variables.get_simulator().time_scale_factor)
         return self._app_vertex
 
     def calculate_n_atoms(self):
-        # figure how many hair bits there are per hair cell
-        n_fibres_per_ihc = (
-            self._n_lsr_per_ihc + self._n_msr_per_ihc + self._n_hsr_per_ihc)
 
         # figure how many hair bits per ihcan core
         n_fibres_per_ihcan_core = \
             SpiNNakEarApplicationVertex.fibres_per_ihcan_core(
                 globals_variables.get_simulator().time_scale_factor / self._fs)
 
+        # NOTE the wrapping to a whole number of channels
+        n_channels = (
+            (int((SpiNNakEarApplicationVertex.FULL_EAR_HAIR_FIBERS *
+                  float(self._scale)) / self._n_fibres_per_ihc) *
+             self._n_fibres_per_ihc) / self._n_fibres_per_ihc)
+
         # figure out how many atoms are aggregated during the aggregation tree
         atoms_per_row = SpiNNakEarApplicationVertex.calculate_atoms_per_row(
-            self._n_channels, n_fibres_per_ihc, n_fibres_per_ihcan_core,
+            n_channels, self._n_fibres_per_ihc, n_fibres_per_ihcan_core,
             self._max_input_to_aggregation_group)
 
         # figure out atoms
         atoms, _, _ = \
             SpiNNakEarApplicationVertex.calculate_n_atoms_for_each_vertex_type(
                 atoms_per_row, self._max_input_to_aggregation_group,
-                self._n_channels, self._n_ihc)
+                n_channels, self._n_fibres_per_ihc, self._seq_size)
 
         # return atoms
         return atoms
@@ -239,6 +236,10 @@ class SpiNNakEar(AbstractPyNNModel):
         return self._audio_input
 
     @property
+    def profile(self):
+        return self._profile
+
+    @property
     def fs(self):
         return self._fs
 
@@ -259,8 +260,8 @@ class SpiNNakEar(AbstractPyNNModel):
         return self._scale
 
     @property
-    def n_ihc(self):
-        return self._n_ihc
+    def n_fibres_per_ihc(self):
+        return self._n_fibres_per_ihc
 
     @property
     def n_lsr_per_ihc(self):

@@ -386,12 +386,12 @@ void count_ticks(uint null_a, uint null_b) {
     if (infinite_run != TRUE && time >= simulation_ticks) {
 
         // handle the pause and resume functionality
+        neuron_recording_finalise();
         simulation_handle_pause_resume(NULL);
 
          // Subtract 1 from the time so this tick gets done again on the next
         // run
         time -= 1;
-        neuron_recording_finalise();
         simulation_ready_to_read();
         return;
     }

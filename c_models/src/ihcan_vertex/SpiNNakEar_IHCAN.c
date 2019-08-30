@@ -392,21 +392,18 @@ void count_ticks(uint null_a, uint null_b) {
 
     time++;
 
-    // update buffered out stuff
-    if (recording_flags > 0) {
-        neuron_recording_do_timestep_update(time);
-    }
+    neuron_recording_do_timestep_update(time);
 
     // If a fixed number of simulation ticks are specified and these have passed
     if (infinite_run != TRUE && time >= simulation_ticks) {
 
         // handle the pause and resume functionality
+        neuron_recording_finalise();
         simulation_handle_pause_resume(NULL);
 
          // Subtract 1 from the time so this tick gets done again on the next
         // run
         time -= 1;
-        neuron_recording_finalise();
 
         simulation_ready_to_read();
         return;
@@ -508,7 +505,7 @@ bool app_init(uint32_t *timer_period)
 	// set up recording
 	if (!neuron_recording_initialise(
             data_specification_get_region(NEURON_RECORDING, data_address),
-            &recording_flags, parameters.number_fibres)) {
+            &recording_flags, parameters.number_fibres * parameters.seg_size)) {
         log_error("failed to set up recording");
         return false;
     }

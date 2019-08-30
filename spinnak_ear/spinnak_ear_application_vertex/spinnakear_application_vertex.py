@@ -20,7 +20,8 @@ from spinn_front_end_common.utilities.constants import \
     MICRO_TO_SECOND_CONVERSION
 from spinn_front_end_common.utilities.exceptions import ConfigurationException
 
-from spynnaker.pyNN.models.abstract_models import AbstractContainsUnits
+from spynnaker.pyNN.models.abstract_models import AbstractContainsUnits, \
+    AbstractPopulationSettable
 from spynnaker.pyNN.models.abstract_models.\
     abstract_accepts_incoming_synapses import AbstractAcceptsIncomingSynapses
 from spynnaker.pyNN.models.abstract_models.\
@@ -186,14 +187,14 @@ class SpiNNakEarApplicationVertex(
     DEFAULT_MAX_AUDIO_FREQUENCY = 20000
 
     # biggest number of neurons for the ear model
-    MAX_NEURON_SIZE = 30000.0
+    FULL_EAR_HAIR_FIBERS = 30000.0
 
     # min audio frequency supported
     DEFAULT_MIN_AUDIO_FREQUENCY = 30
 
     def __init__(
             self, n_neurons, constraints, label, model, profile,
-            time_scale_factor, n_channels):
+            time_scale_factor):
         # Superclasses
         ApplicationVertex.__init__(self, label, constraints)
         AbstractAcceptsIncomingSynapses.__init__(self)
@@ -220,7 +221,8 @@ class SpiNNakEarApplicationVertex(
         sample_time = time_scale_factor / self._model.fs
 
         # how many channels
-        self._n_channels = n_channels
+        self._n_channels = int(
+            self.get_out_going_size() / self._model.n_fibres_per_ihc)
 
         # process pole freqs
         self._pole_freqs = self._process_pole_freqs()
@@ -244,7 +246,8 @@ class SpiNNakEarApplicationVertex(
             IHCANMachineVertex.RECORDABLES,
             IHCANMachineVertex.get_matrix_scalar_data_types(),
             IHCANMachineVertex.get_matrix_output_data_types(),
-            self._n_dnrls * self._n_fibres_per_ihcan_core)
+            self._n_dnrls * self._n_fibres_per_ihcan_core *
+            self._model.seq_size)
 
         # bool for if state has changed.
         self._change_requires_mapping = True
@@ -322,14 +325,16 @@ class SpiNNakEarApplicationVertex(
                     self.calculate_n_atoms_for_each_vertex_type(
                         atoms_per_row,
                         self._model.max_input_to_aggregation_group,
-                        self._n_channels, self._model.n_ihc)
+                        self._n_channels, self._model.n_fibres_per_ihc,
+                        self._model.seq_size)
                 # save fixed param file
                 self._save_pre_gen_vars(self._model.param_file)
         else:
             self._n_atoms, self._n_dnrls, self._n_final_agg_groups = \
                 self.calculate_n_atoms_for_each_vertex_type(
                     atoms_per_row, self._model.max_input_to_aggregation_group,
-                    self._n_channels, self._model.n_ihc)
+                    self._n_channels, self._model.n_fibres_per_ihc,
+                    self._model.seq_size)
 
     def process_internal_numbers(self):
 
@@ -382,7 +387,9 @@ class SpiNNakEarApplicationVertex(
 
     @overrides(AbstractSendsOutgoingSynapses.get_out_going_size)
     def get_out_going_size(self):
-        return self._n_final_agg_groups
+        return (int(
+            self.FULL_EAR_HAIR_FIBERS * float(self._model.scale) /
+            self._model.n_fibres_per_ihc) * self._model.n_fibres_per_ihc)
 
     def get_out_going_slices(self):
         slices = list()
@@ -530,15 +537,30 @@ class SpiNNakEarApplicationVertex(
         }
         return context
 
+    @overrides(AbstractPopulationSettable.get_value)
+    def get_value(self, key):
+        if hasattr(self._model, key):
+            return getattr(self._model, key)
+        raise Exception("Population {} does not have parameter {}".format(
+            self, key))
+
     def _add_to_graph_components(
-            self, machine_graph, graph_mapper, lo_atom, vertex,
+            self, machine_graph, graph_mapper, slice, vertex,
             resource_tracker):
+        """ adds the vertex to all the graph components and resources
+
+        :param machine_graph: machine graph
+        :param graph_mapper: graph mapper
+        :param slice: slice
+        :param vertex: machien vertex
+        :param resource_tracker: resource tracker
+        :rtype: None
+        """
+
         machine_graph.add_vertex(vertex)
-        graph_mapper.add_vertex_mapping(
-            vertex, Slice(lo_atom, lo_atom), self)
+        graph_mapper.add_vertex_mapping(vertex, slice, self)
         resource_tracker.allocate_constrained_resources(
             vertex.resources_required, vertex.constraints)
-        return lo_atom + 1
 
     def _build_ome_vertex(
             self, machine_graph, graph_mapper, lo_atom, resource_tracker,
@@ -559,9 +581,10 @@ class SpiNNakEarApplicationVertex(
             self._model.seq_size, timer_period, self._profile)
 
         # allocate resources and updater graphs
-        new_lo_atom = self._add_to_graph_components(
-            machine_graph, graph_mapper, lo_atom, ome_vertex, resource_tracker)
-        return ome_vertex, new_lo_atom
+        self._add_to_graph_components(
+            machine_graph, graph_mapper, Slice(lo_atom, lo_atom), ome_vertex,
+            resource_tracker)
+        return ome_vertex, lo_atom + 1
 
     def _build_drnl_verts(
             self, machine_graph, graph_mapper, new_low_atom, resource_tracker,
@@ -586,9 +609,10 @@ class SpiNNakEarApplicationVertex(
                 self._model.n_buffers_in_sdram_total,
                 self._drnl_neuron_recorder, timer_period)
             pole_index += 1
-            new_low_atom = self._add_to_graph_components(
-                machine_graph, graph_mapper, new_low_atom, drnl_vertex,
-                resource_tracker)
+            self._add_to_graph_components(
+                machine_graph, graph_mapper, Slice(new_low_atom, new_low_atom),
+                drnl_vertex,  resource_tracker)
+            new_low_atom += 1
             self._drnl_vertices.append(drnl_vertex)
         return new_low_atom
 
@@ -624,10 +648,10 @@ class SpiNNakEarApplicationVertex(
         :return: iterable of ihcan verts
         """
 
-        ichans = list()
+        ihcans = list()
 
         # generate ihc seeds
-        n_ihcans = self._n_channels * self._model.n_ihc
+        n_ihcans = self._n_channels * self._model.n_fibres_per_ihc
         seed_index = 0
         random_range = numpy.arange(
             n_ihcans * IHCANMachineVertex.N_SEEDS_PER_IHCAN_VERTEX,
@@ -656,13 +680,18 @@ class SpiNNakEarApplicationVertex(
             random.seed(self._model.ihcan_fibre_random_seed)
             random.shuffle(fibres)
 
-            lo_atom = 0
             for _ in range(
-                    int(self._model.n_ihc / self._n_fibres_per_ihcan_core)):
+                    int(self._model.n_fibres_per_ihc /
+                        self._n_fibres_per_ihcan_core)):
 
                 # randomly pick fibre types
                 chosen_indices = [
                     fibres.pop() for _ in range(self._n_fibres_per_ihcan_core)]
+
+                ihcan_slice = Slice(
+                    new_low_atom, new_low_atom + (
+                        self._n_fibres_per_ihcan_core *
+                        self._model.seq_size) - 1)
 
                 vertex = IHCANMachineVertex(
                     self._model.resample_factor,
@@ -677,15 +706,17 @@ class SpiNNakEarApplicationVertex(
                     chosen_indices.count(self.HSR_FLAG),
                     self._model.n_buffers_in_sdram_total,
                     self._model.seq_size, self._ihcan_neuron_recorder,
-                    Slice(lo_atom,
-                          lo_atom + self._n_fibres_per_ihcan_core - 1),
-                    timer_period)
-                lo_atom += self._n_fibres_per_ihcan_core - 1
-                seed_index += IHCANMachineVertex.N_SEEDS_PER_IHCAN_VERTEX
-                ichans.append(vertex)
+                    ihcan_slice, timer_period)
 
-                new_low_atom = self._add_to_graph_components(
-                    machine_graph, graph_mapper, new_low_atom, vertex,
+                # update indexes
+                new_low_atom += ihcan_slice.n_atoms
+                seed_index += IHCANMachineVertex.N_SEEDS_PER_IHCAN_VERTEX
+
+                # add to list of ihcans
+                ihcans.append(vertex)
+
+                self._add_to_graph_components(
+                    machine_graph, graph_mapper, ihcan_slice, vertex,
                     resource_tracker)
 
                 # multicast
@@ -701,13 +732,14 @@ class SpiNNakEarApplicationVertex(
                 machine_graph.add_edge(
                     sdram_edge, drnl_vertex.DRNL_SDRAM_PARTITION_ID)
                 graph_mapper.add_edge_mapping(sdram_edge, sdram_app_edge)
-        return ichans, new_low_atom
+        return ihcans, new_low_atom
 
     def _build_aggregation_group_vertices_and_edges(
-            self, ichan_vertices, machine_graph, graph_mapper,
+            self, machine_graph, graph_mapper,
             new_low_atom, resource_tracker, app_edge):
 
-        to_process = ichan_vertices
+        to_process = list()
+        to_process.extend(self._ihcan_vertices)
         n_child_per_group = self._model.max_input_to_aggregation_group
 
         for row in range(self._n_group_tree_rows):
@@ -725,6 +757,10 @@ class SpiNNakEarApplicationVertex(
                 for child in child_verts:
                     n_atoms += child.n_atoms
 
+                # build silce for an node
+                an_slice = Slice(new_low_atom, new_low_atom + n_atoms - 1)
+                new_low_atom += n_atoms
+
                 # build vert
                 final_row = row == self._n_group_tree_rows - 1
                 ag_vertex = ANGroupMachineVertex(
@@ -735,8 +771,8 @@ class SpiNNakEarApplicationVertex(
                 aggregation_verts.append(ag_vertex)
 
                 # update stuff
-                new_low_atom = self._add_to_graph_components(
-                    machine_graph, graph_mapper, new_low_atom, ag_vertex,
+                self._add_to_graph_components(
+                    machine_graph, graph_mapper, an_slice, ag_vertex,
                     resource_tracker)
 
                 # add edges
@@ -790,15 +826,15 @@ class SpiNNakEarApplicationVertex(
             ome_vertex, machine_graph, mc_app_edge, graph_mapper)
 
         # build the ihcan verts.
-        ichan_vertices, current_atom_count = (
+        self._ihcan_vertices, current_atom_count = (
             self._build_ihcan_vertices_and_sdram_edges(
                 machine_graph, graph_mapper, current_atom_count,
                 resource_tracker, mc_app_edge, sdram_app_edge, timer_period))
 
         # build aggregation group verts and edges
         self._build_aggregation_group_vertices_and_edges(
-            ichan_vertices, machine_graph, graph_mapper, current_atom_count,
-            resource_tracker, mc_app_edge)
+            machine_graph, graph_mapper, current_atom_count, resource_tracker,
+            mc_app_edge)
 
     @property
     @overrides(ApplicationVertex.n_atoms)
@@ -808,7 +844,7 @@ class SpiNNakEarApplicationVertex(
     @staticmethod
     def calculate_n_atoms_for_each_vertex_type(
             n_group_tree_rows, max_input_to_aggregation_group, n_channels,
-            n_ihc):
+            n_ihc, seq_size):
         # ome atom
         n_atoms = 1
 
@@ -817,13 +853,14 @@ class SpiNNakEarApplicationVertex(
 
         # ihcan atoms
         n_angs = n_channels * n_ihc
-        n_atoms += n_angs
+        n_atoms += (n_angs * seq_size)
 
         # an group atoms
         for row_index in range(n_group_tree_rows):
             n_row_angs = int(
                 numpy.ceil(float(n_angs) / max_input_to_aggregation_group))
-            n_atoms += n_row_angs
+            n_atoms += (n_row_angs * (
+                (row_index + 1) ** max_input_to_aggregation_group))
             n_angs = n_row_angs
         return n_atoms, n_channels, n_angs
 
@@ -870,7 +907,8 @@ class SpiNNakEarApplicationVertex(
             local_timer_period_map):
         return self._ihcan_neuron_recorder.get_spikes(
             self._label, buffer_manager,
-            IHCANMachineVertex.RECORDING_REGIONS.SPIKE_RECORDING_REGION_ID,
+            IHCANMachineVertex.RECORDING_REGIONS.SPIKE_RECORDING_REGION_ID
+                .value,
             placements, graph_mapper, self, local_timer_period_map)
 
     @overrides(AbstractSpikeRecordable.set_recording_spikes)
@@ -890,6 +928,17 @@ class SpiNNakEarApplicationVertex(
         recordables.extend(IHCANMachineVertex.RECORDABLES)
         return recordables
 
+    @overrides(AbstractSpikeRecordable.get_spike_machine_vertices)
+    def get_spike_machine_vertices(self, graph_mapper):
+        return self._ihcan_vertices
+
+    @overrides(AbstractNeuronRecordable.get_machine_vertices_for)
+    def get_machine_vertices_for(self, variable, graph_mapper):
+        if variable == DRNLMachineVertex.MOC:
+            return self._drnl_vertices
+        else:
+            return self._ihcan_vertices
+
     @overrides(AbstractNeuronRecordable.clear_recording)
     def clear_recording(self, variable, buffer_manager, placements,
                         graph_mapper):
@@ -898,7 +947,7 @@ class SpiNNakEarApplicationVertex(
                 placement = placements.get_placement_of_vertex(drnl_vertex)
                 buffer_manager.clear_recorded_data(
                     placement.x, placement.y, placement.p,
-                    DRNLMachineVertex.MOC_RECORDING_REGION_ID)
+                    DRNLMachineVertex.MOC_RECORDING_REGION_ID.value)
         if variable == self.SPIKES:
             for ihcan_vertex in self._ihcan_vertices:
                 placement = placements.get_placement_of_vertex(ihcan_vertex)

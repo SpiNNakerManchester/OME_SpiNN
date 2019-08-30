@@ -648,8 +648,7 @@ class DRNLMachineVertex(
 
     @overrides(AbstractReceiveBuffersToHost.get_recorded_region_ids)
     def get_recorded_region_ids(self):
-        return [self.RECORDING_REGIONS.DRNL_SPIKES_RECORDING_REGION_ID.value,
-                self.RECORDING_REGIONS.MOC_RECORDING_REGION_ID.value]
+        return self._neuron_recorder.recorded_region_ids
 
     @overrides(AbstractReceiveBuffersToHost.get_recording_region_base_address)
     def get_recording_region_base_address(self, txrx, placement):
