@@ -182,8 +182,8 @@ void record_finished_spikes_prob(void) {
 //! \return None
 void data_read(uint mc_key, uint payload) {
     log_info(
-        " r max recip %k",
-        (accum) inner_ear_params.r_max_recip * (0xffffffff+1.f));
+        " r max recip %f",
+        inner_ear_params.r_max_recip * (0xffffffff+1.f));
 
     use(mc_key);
     use(payload);
@@ -216,16 +216,16 @@ void data_read(uint mc_key, uint payload) {
     data_read_count ++;
 
     log_info(
-        " r max recip %k",
-        (accum) inner_ear_params.r_max_recip * (0xffffffff+1.f));
+        " r max recip %f",
+        inner_ear_params.r_max_recip * (0xffffffff+1.f));
 }
 
 //! \brief Main segment processing loop
 //select correct output buffer type
 void process_chan(double *in_buffer) {
     log_info(
-        " r max recip %k",
-         (accum)(inner_ear_params.r_max_recip* (0xffffffff+1.f)));
+        " r max recip %f",
+         (inner_ear_params.r_max_recip* (0xffffffff+1.f)));
 
 	for (int i = 0; i < parameters.seg_size; i++) {
 
@@ -300,11 +300,11 @@ void process_chan(double *in_buffer) {
             float ejected;
             float seed_test = (float) mars_kiss64_seed(local_seed);
             log_info(
-                "seed test = %k, * max recip = %k, prob = %k R_MAX_RECIP = %k",
-                (accum) seed_test,
-                (accum) seed_test * inner_ear_params.r_max_recip,
-                (accum) probability,
-                (accum) (accum)(inner_ear_params.r_max_recip*(0xffffffff+1.f)));
+                "seed test = %f, * max recip = %f, prob = %f R_MAX_RECIP = %f",
+                seed_test,
+                seed_test * inner_ear_params.r_max_recip,
+                probability,
+                (inner_ear_params.r_max_recip*(0xffffffff+1.f)));
             bool spiked;
             if (probability > (
                     (float) mars_kiss64_seed(local_seed) *
@@ -396,8 +396,8 @@ void transfer_handler(uint tid, uint ttag) {
     use(ttag);
 
     log_info(
-        " r max recip %k",
-        (accum) inner_ear_params.r_max_recip * (0xffffffff+1.f));
+        " r max recip %f",
+        inner_ear_params.r_max_recip * (0xffffffff+1.f));
 
     //increment segment index
     seg_index ++;
@@ -419,8 +419,8 @@ void count_ticks(uint null_a, uint null_b) {
     use(null_b);
 
     log_info(
-        " r max recip %k",
-         (accum)(inner_ear_params.r_max_recip* (0xffffffff+1.f)));
+        " r max recip %f",
+         (inner_ear_params.r_max_recip* (0xffffffff+1.f)));
 
     time++;
 
@@ -442,8 +442,8 @@ void count_ticks(uint null_a, uint null_b) {
     }
 
     log_info(
-        " r max recip %k",
-        (accum) inner_ear_params.r_max_recip * (0xffffffff+1.f));
+        " r max recip %f",
+        inner_ear_params.r_max_recip * (0xffffffff+1.f));
 }
 
 void _store_provenance_data(address_t provenance_region) {
@@ -502,16 +502,16 @@ bool app_init(uint32_t *timer_period)
         data_specification_get_region(INNER_EAR_PARAMS, data_address),
         sizeof(inner_ear_param_struct));
 
-    log_info("%k",(accum)(inner_ear_params.r_max_recip*(0xffffffff+1.f)));
+    log_info("%f",(inner_ear_params.r_max_recip*(0xffffffff+1.f)));
     log_info(
-        " r max recip %k",
-         (accum)(inner_ear_params.r_max_recip* (0xffffffff+1.f)));
+        " r max recip %f",
+         (inner_ear_params.r_max_recip* (0xffffffff+1.f)));
     log_info(
-        " r max recip %k",
-         (accum)(inner_ear_params.r_max_recip* (0xffffffff+1.f)));
+        " r max recip %f",
+         (inner_ear_params.r_max_recip* (0xffffffff+1.f)));
     log_info(
-        " r max recip %k",
-         (accum)(inner_ear_params.r_max_recip* (0xffffffff+1.f)));
+        " r max recip %f",
+        (inner_ear_params.r_max_recip* (0xffffffff+1.f)));
 
     // get dt params
     spin1_memcpy(
@@ -667,8 +667,8 @@ bool app_init(uint32_t *timer_period)
 	synapse_params.refrac_period = (IHC_REFRACTORY_PERIOD / dt_spikes);
 
 	log_info(
-        " r max recip %k",
-         (accum)(inner_ear_params.r_max_recip* (0xffffffff+1.f)));
+        " r max recip %f",
+         (inner_ear_params.r_max_recip* (0xffffffff+1.f)));
 
     return true;
 }
@@ -683,8 +683,8 @@ void c_main()
 
     if (app_init(&timer_period)) {
         log_info(
-            " r max recip %k",
-            (accum) inner_ear_params.r_max_recip * (0xffffffff+1.f));
+            " r max recip %f",
+            inner_ear_params.r_max_recip * (0xffffffff+1.f));
 
         // Set timer tick (in microseconds)
         log_info("setting timer tick callback for %d microseconds",
@@ -700,8 +700,8 @@ void c_main()
         spin1_callback_on (TIMER_TICK, count_ticks, TIMER);
 
         log_info(
-            " r max recip %k",
-            (accum) inner_ear_params.r_max_recip * (0xffffffff+1.f));
+            " r max recip %f",
+            inner_ear_params.r_max_recip * (0xffffffff+1.f));
 
         simulation_run();
     }
