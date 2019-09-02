@@ -20,9 +20,6 @@
 
 #include "spin1_api.h"
 
-#define RDM_MAX UINT32_MAX + 1.0f
-#define R_MAX_RECIP 1.0f / RDM_MAX
-
 //! \brief
 #define RECIP_BETA 1.0 / 400.0
 
@@ -211,6 +208,7 @@ typedef struct inner_ear_param_struct{
     float ca_curr_lsr;
     float ca_curr_msr;
     float ca_curr_hsr;
+    float r_max_recip;
 } inner_ear_param_struct;
 
 #endif /* IHC_AN_H_ */

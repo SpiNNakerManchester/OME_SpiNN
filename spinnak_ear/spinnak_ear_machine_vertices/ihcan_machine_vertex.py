@@ -206,7 +206,7 @@ class IHCANMachineVertex(
     _N_CILIA_PARAMS = 2
 
     # the number of params in the inner ear params region
-    _N_INNER_EAR_PARAM_PARAMS = 15
+    _N_INNER_EAR_PARAM_PARAMS = 16
 
     # the number of elements in the seeds
     N_SEEDS_PER_IHCAN_VERTEX = 4
@@ -519,6 +519,7 @@ class IHCANMachineVertex(
         spec.write_value(self.CA_CURR_LSR, DataType.FLOAT_32)
         spec.write_value(self.CA_CURR_MSR, DataType.FLOAT_32)
         spec.write_value(self.CA_CURR_HSR, DataType.FLOAT_32)
+        spec.write_value((1.0 / (0xffffffff + 1.0)), DataType.FLOAT_32)
 
     def _fill_in_dt_param_region(self, spec):
         """ writes the dt based constants

@@ -764,7 +764,8 @@ class SpiNNakEarApplicationVertex(
                 # build vert
                 final_row = row == self._n_group_tree_rows - 1
                 ag_vertex = ANGroupMachineVertex(
-                    n_atoms, len(child_verts), final_row, final_row_lo_atom)
+                    n_atoms, len(child_verts), final_row, final_row_lo_atom,
+                    row)
                 if final_row:
                     self._final_agg_vertices.append(ag_vertex)
                     final_row_lo_atom += 1

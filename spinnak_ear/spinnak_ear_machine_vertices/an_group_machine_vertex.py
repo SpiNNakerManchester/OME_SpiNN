@@ -61,13 +61,14 @@ class ANGroupMachineVertex(
                ('KEY_MAP', 2),
                ('PROVENANCE', 3)])
 
-    def __init__(self, n_atoms, n_children, is_final_row, final_row_lo_atom):
+    def __init__(
+            self, n_atoms, n_children, is_final_row, final_row_lo_atom, row):
         """
         """
         MachineVertex.__init__(
             self,
             label="AN Group Node with lo atom {} and is {} for final "
-                  "row".format(final_row_lo_atom, is_final_row),
+                  "row in row {}".format(final_row_lo_atom, is_final_row, row),
             constraints=None)
         self._n_atoms = n_atoms
         self._n_children = n_children
