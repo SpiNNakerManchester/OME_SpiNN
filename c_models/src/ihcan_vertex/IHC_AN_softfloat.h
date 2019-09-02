@@ -213,5 +213,4 @@ typedef struct inner_ear_param_struct{
     float ca_curr_hsr;
 } inner_ear_param_struct;
 
-
 #endif /* IHC_AN_H_ */

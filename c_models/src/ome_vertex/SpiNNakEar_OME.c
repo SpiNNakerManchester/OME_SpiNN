@@ -252,6 +252,7 @@ void process_chan(REAL *in_buffer) {
 		multicast_union.f = stapes_displacement;
 
 		//transmit uint output as MC with payload to all DRNLs
+		log_info("sending mc packet with value %u", multicast_union.u);
         spin1_send_mc_packet(parameters.key, multicast_union.u, WITH_PAYLOAD);
 	}
 

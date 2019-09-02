@@ -16,7 +16,6 @@
  */
 
 //! Inner Hair Cell + Auditory Nerve model for use in SpiNNakEar  system
-
 #include "IHC_AN_softfloat.h"
 #include "spin1_api.h"
 #include "random.h"
@@ -287,11 +286,17 @@ void process_chan(double *in_buffer) {
             }
 
             float ejected;
+            float seed_test = (float) mars_kiss64_seed(local_seed);
+            log_info(
+                "seed test = %k, * max recip = %k, prob = %k",
+                seed_test, seed_test * R_MAX_RECIP, probability);
             bool spiked;
             if (probability > (
                     (float) mars_kiss64_seed(local_seed) * R_MAX_RECIP)) {
                 ejected = 1.0f;
+               log_info("refrac[%d]= %d", j, refrac[j]);
                 if (refrac[j] <= 0) {
+                    log_info("will spike");
                     spiked = TRUE;
                     spin1_send_mc_packet(
                         parameters.my_key | j, 0, NO_PAYLOAD);

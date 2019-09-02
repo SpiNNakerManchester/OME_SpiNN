@@ -309,6 +309,7 @@ void write_complete(uint tid, uint ttag) {
     #endif
 
     //send MC packet to connected IHC/AN models
+    log_info("sending packet to ihcans");
     while (!spin1_send_mc_packet(
             parameters.key, DRNL_FILLER_ARG, NO_PAYLOAD)) {
         spin1_delay_us(1);
@@ -361,6 +362,9 @@ void data_read(uint mc_key, uint payload) {
                     PROCESS_HANDLER_PRIORITY);
             }
         }
+    }
+    else {
+        log_error("received packet which i dont expect");
     }
 }
 
