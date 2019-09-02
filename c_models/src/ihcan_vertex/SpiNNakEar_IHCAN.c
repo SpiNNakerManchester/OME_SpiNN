@@ -298,13 +298,6 @@ void process_chan(double *in_buffer) {
             }
 
             float ejected;
-            float seed_test = (float) mars_kiss64_seed(local_seed);
-            log_info(
-                "seed test = %f, * max recip = %f, prob = %f R_MAX_RECIP = %f",
-                seed_test,
-                seed_test * inner_ear_params.r_max_recip,
-                probability,
-                (inner_ear_params.r_max_recip*(0xffffffff+1.f)));
             bool spiked;
             if (probability > (
                     (float) mars_kiss64_seed(local_seed) *
