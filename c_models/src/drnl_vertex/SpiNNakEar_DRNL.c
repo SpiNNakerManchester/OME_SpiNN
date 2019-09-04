@@ -60,7 +60,7 @@ uint_float_union MC_union;
 double moc;
 double moc_now_1;
 double moc_now_2;
-double moc_now_4;
+double moc_now_3;
 double moc_dec_1;
 double moc_dec_2;
 double moc_dec_3;
@@ -215,9 +215,9 @@ uint process_chan(double *out_buffer, float *in_buffer) {
 		//MOC efferent effects
         moc_now_1 = moc_now_1 * moc_dec_1 + moc_spike_weight * moc_factor_1;
         moc_now_2 = moc_now_2 * moc_dec_2 + moc_spike_weight * moc_factor_2;
-        moc_now_4 = moc_now_4 * moc_dec_3 + moc_spike_weight * moc_factor_3;
+        moc_now_3 = moc_now_3 * moc_dec_3 + moc_spike_weight * moc_factor_3;
 
-        moc = 1.0 / (1 + moc_now_1 + moc_now_2 + moc_now_4);
+        moc = 1.0 / (1 + moc_now_1 + moc_now_2 + moc_now_3);
 
         if (moc > 1.0) {
             log_error("out of bounds moc_n%d", moc);
@@ -517,7 +517,7 @@ static inline bool app_init(uint32_t *timer_period) {
 
 	moc_now_1 = 0.0;
 	moc_now_2 = 0.0;
-	moc_now_4 = 0.0;
+	moc_now_3 = 0.0;
 
     moc_dec_1 = double_params.moc_dec_1;
     moc_dec_2 = double_params.moc_dec_2;
