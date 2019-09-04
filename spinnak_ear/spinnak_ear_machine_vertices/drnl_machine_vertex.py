@@ -495,7 +495,7 @@ class DRNLMachineVertex(
         # write moc resample factor
         spec.write_value(self._fs / constants.MICRO_TO_MILLISECOND_CONVERSION)
 
-    def _write_double_params_region(self, spec):
+    def _write_double_params_region(self, spec,sim_period):
         """ writes the parameters which are double types
 
         :param spec: data spec writer
@@ -506,9 +506,12 @@ class DRNLMachineVertex(
 
         # moc dec 1
         dt = 1.0 / self._fs
+        dt_moc = 1.0 / sim_period
         spec.write_value(
             math.exp(-dt / self.MOC_TAU_0), data_type=DataType.FLOAT_64)
-
+        # moc dec 2 & 3 are currently redundant as moc_factor_2 & 3 are 
+        # hard coded = 0 in c code - i.e. current version only uses moc 
+        # dec 1 and moc_factor_1
         # moc dec 2
         spec.write_value(
             math.exp(-dt / self.MOC_TAU_1), data_type=DataType.FLOAT_64)
@@ -517,10 +520,11 @@ class DRNLMachineVertex(
         spec.write_value(
             math.exp(-dt / self.MOC_TAU_2), data_type=DataType.FLOAT_64)
 
-        # moc_factor_1
+        # moc_factor_1 (scaled by 1/sim time step * ratio of drnl dt and 
+        # sim time step)
         spec.write_value(
-            self.RATE_TO_ATTENTUATION_FACTOR * self.MOC_TAU_WEIGHT * dt,
-            data_type=DataType.FLOAT_64)
+            self.RATE_TO_ATTENTUATION_FACTOR * self.MOC_TAU_WEIGHT * 
+            (dt / (dt_moc ** 2)) ,data_type=DataType.FLOAT_64)
 
         # ctbm
         ctbm = 1e-9 * math.pow(10.0, 32.0 / 20.0)
@@ -598,7 +602,7 @@ class DRNLMachineVertex(
         self._write_param_region(spec, machine_graph, routing_info)
 
         # float params
-        self._write_double_params_region(spec)
+        self._write_double_params_region(spec,time_period_map[self])
 
         # write the filter params
         self._write_filter_params(spec)
