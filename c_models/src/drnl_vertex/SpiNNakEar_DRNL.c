@@ -226,7 +226,8 @@ uint process_chan(double *out_buffer, float *in_buffer) {
         if (moc < 0.0) {
             log_error("out of bounds moc_n%d", moc);
         }
-		non_linout_2a *= moc;
+		// original moc att location
+		//non_linout_2a *= moc;
 
 		//stage 2
 		double abs_x = absolute_value(non_linout_2a);
@@ -263,7 +264,9 @@ uint process_chan(double *out_buffer, float *in_buffer) {
 		nlin_y2b[1] = non_linout_2b;
 
 		//save to buffer
-		out_buffer[i] = linout2 + non_linout_2b;
+		//out_buffer[i] = linout2 + non_linout_2b;
+		// changed moc att to channel output
+		out_buffer[i] = (linout2 + non_linout_2b) * moc;
 
 		neuron_recording_set_double_recorded_param(
 		    MOC_RECORDING_REGION, 0, moc);
