@@ -329,11 +329,11 @@ class IHCANMachineVertex(
 
     @staticmethod
     def get_matrix_scalar_data_types():
-        return {IHCANMachineVertex.SPIKE_PROB: DataType.FLOAT_64}
+        return {IHCANMachineVertex.SPIKE_PROB: DataType.FLOAT_32}
 
     @staticmethod
     def get_matrix_output_data_types():
-        return {IHCANMachineVertex.SPIKE_PROB: DataType.FLOAT_64}
+        return {IHCANMachineVertex.SPIKE_PROB: DataType.FLOAT_32}
 
     @overrides(AbstractMachineSupportsAutoPauseAndResume.my_local_time_period)
     def my_local_time_period(self, simulator_time_step):

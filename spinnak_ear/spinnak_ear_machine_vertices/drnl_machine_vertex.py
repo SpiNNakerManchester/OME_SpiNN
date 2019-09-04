@@ -154,7 +154,11 @@ class DRNLMachineVertex(
         DRNL_SPIKES: 'spikes'}
 
     # recording region id for the moc
-    MOC_RECORDABLE_REGION_ID = 0
+    MOC_RECORDABLE_REGION_ID = 1
+
+    # this should never be used, but is forced upon us due to all verts
+    # needing to record spikes.
+    DRNL_SPIKES_RECORDABLE_REGION_ID = 0
 
     # regions
     REGIONS = Enum(

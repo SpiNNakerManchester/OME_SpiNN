@@ -62,13 +62,16 @@ class ANGroupMachineVertex(
                ('PROVENANCE', 3)])
 
     def __init__(
-            self, n_atoms, n_children, is_final_row, final_row_lo_atom, row):
+            self, n_atoms, n_children, is_final_row, final_row_lo_atom, row,
+            ear_index):
         """
         """
         MachineVertex.__init__(
             self,
-            label="AN Group Node with lo atom {} and is {} for final "
-                  "row in row {}".format(final_row_lo_atom, is_final_row, row),
+            label=(
+                "AN Group Node for ear {} with lo atom {} and is {} for "
+                "final row in row {}".format(
+                    ear_index, final_row_lo_atom, is_final_row, row)),
             constraints=None)
         self._n_atoms = n_atoms
         self._n_children = n_children
@@ -259,7 +262,7 @@ class ANGroupMachineVertex(
 
     @overrides(AbstractProvidesNKeysForPartition.get_n_keys_for_partition)
     def get_n_keys_for_partition(self, partition, graph_mapper):
-        return self._n_atoms  # two for control IDs
+        return self._n_atoms
 
     @property
     def n_atoms(self):

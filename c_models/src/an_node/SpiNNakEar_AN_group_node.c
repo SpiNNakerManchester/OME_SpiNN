@@ -65,6 +65,10 @@ void key_search_and_send(uint spike, uint null_a) {
     while (imin < imax) {
         imid = (imax + imin) >> 1;
         entry = key_mask_table.entries[imid];
+        log_debug(
+            "key %d, key mask combo %d, entry key %d",
+            spike, spike & entry.mask,  entry.key);
+
         if ((spike & entry.mask) == entry.key){
             int neuron_id = entry.offset + (spike & ~entry.mask);
             if (neuron_id >= parameters.n_atoms) {

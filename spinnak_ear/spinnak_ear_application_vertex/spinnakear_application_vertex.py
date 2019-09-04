@@ -11,7 +11,7 @@ from pacman.model.partitioner_interfaces.\
     AbstractControlsSourceOfEdges
 
 from spinn_front_end_common.abstract_models import AbstractChangableAfterRun, \
-    AbstractCanReset
+    AbstractCanReset, AbstractProvidesNKeysForPartition
 from spinn_front_end_common.abstract_models.\
     abstract_application_supports_auto_pause_and_resume import \
     AbstractApplicationSupportsAutoPauseAndResume
@@ -66,7 +66,8 @@ class SpiNNakEarApplicationVertex(
         AbstractSpikeRecordable, AbstractNeuronRecordable,
         AbstractControlsDestinationOfEdges, AbstractControlsSourceOfEdges,
         AbstractSendsOutgoingSynapses, AbstractCanReset, AbstractContainsUnits,
-        AbstractApplicationSupportsAutoPauseAndResume):
+        AbstractApplicationSupportsAutoPauseAndResume,
+        AbstractProvidesNKeysForPartition):
 
     __slots__ = [
         # pynn model
@@ -203,6 +204,7 @@ class SpiNNakEarApplicationVertex(
         AbstractChangableAfterRun.__init__(self)
         AbstractSpikeRecordable.__init__(self)
         AbstractNeuronRecordable.__init__(self)
+        AbstractProvidesNKeysForPartition.__init__(self)
 
         self._model = model
         self._profile = profile
@@ -268,7 +270,12 @@ class SpiNNakEarApplicationVertex(
         # write timer period
         self._timer_period = (
             MICRO_TO_SECOND_CONVERSION *
-            self._model.seq_size / self._model.fs)
+            (self._model.seq_size / self._model.fs))
+
+    @overrides(AbstractProvidesNKeysForPartition.get_n_keys_for_partition)
+    def get_n_keys_for_partition(self, partition, graph_mapper):
+        return partition.pre_vertex.get_n_keys_for_partition(
+            partition, graph_mapper)
 
     @staticmethod
     def fibres_per_ihcan_core(sample_time):
@@ -765,7 +772,7 @@ class SpiNNakEarApplicationVertex(
                 final_row = row == self._n_group_tree_rows - 1
                 ag_vertex = ANGroupMachineVertex(
                     n_atoms, len(child_verts), final_row, final_row_lo_atom,
-                    row)
+                    row, self._model.ear_index)
                 if final_row:
                     self._final_agg_vertices.append(ag_vertex)
                     final_row_lo_atom += 1
@@ -998,9 +1005,9 @@ class SpiNNakEarApplicationVertex(
     @overrides(AbstractNeuronRecordable.is_recording)
     def is_recording(self, variable):
         if variable == DRNLMachineVertex.MOC:
-            self._drnl_neuron_recorder.is_recording(variable)
+            return self._drnl_neuron_recorder.is_recording(variable)
         elif variable in IHCANMachineVertex.RECORDABLES:
-            self._ihcan_neuron_recorder.is_recording(variable)
+            return self._ihcan_neuron_recorder.is_recording(variable)
         else:
             raise ConfigurationException(self.RECORDING_ERROR.format(variable))
 

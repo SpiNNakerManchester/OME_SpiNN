@@ -111,12 +111,12 @@ void _store_provenance_data(address_t provenance_region) {
     provenance_region[A1] = stapes_hp_a[1];
     provenance_region[A2] = stapes_hp_a[2];
 
-    log_info("b0:%k", (accum)stapes_hp_b[0]);
-    log_info("b1:%k", (accum)stapes_hp_b[1]);
-    log_info("b2:%k", (accum)stapes_hp_b[2]);
-	log_info("a0:%k", (accum)stapes_hp_a[0]);
-	log_info("a1:%k", (accum)stapes_hp_a[1]);
-    log_info("a2:%k", (accum)stapes_hp_a[2]);
+    log_info("b0:%f", stapes_hp_b[0]);
+    log_info("b1:%f", stapes_hp_b[1]);
+    log_info("b2:%f", stapes_hp_b[2]);
+	log_info("a0:%f", stapes_hp_a[0]);
+	log_info("a1:%f", stapes_hp_a[1]);
+    log_info("a2:%f", stapes_hp_a[2]);
 
     log_debug("finished other provenance data");
 }
@@ -252,7 +252,7 @@ void process_chan(REAL *in_buffer) {
 		multicast_union.f = stapes_displacement;
 
 		//transmit uint output as MC with payload to all DRNLs
-		log_info("sending mc packet with value %u", multicast_union.u);
+		log_info("sending mc packet with value %f", stapes_displacement);
         spin1_send_mc_packet(parameters.key, multicast_union.u, WITH_PAYLOAD);
 	}
 
