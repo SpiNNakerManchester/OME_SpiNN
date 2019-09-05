@@ -194,7 +194,7 @@ void process_chan(REAL *in_buffer) {
 	REAL sub;
 
 	for (int i = 0; i < parameters.seg_size; i++){
-	    log_info("in buffer %d is %f or %x", i, in_buffer[i], in_buffer[i]);
+	    log_info("in buffer %d is %F", i, in_buffer[i]);
 	}
 
 	for (int i = 0; i < parameters.seg_size; i++){
@@ -216,7 +216,7 @@ void process_chan(REAL *in_buffer) {
 
 		ear_canal_input = (
 		    concha_params.concha_gain_scalar * concha + in_buffer[i]);
-		log_info(" ear canal input = %f", ear_canal_input);
+		log_info(" ear canal input = %F", ear_canal_input);
 
 		//ear canal
 		filter_1 =
@@ -239,11 +239,11 @@ void process_chan(REAL *in_buffer) {
 		    concha_params.ear_canal_gain_scalar * ear_canal_res +
 		    ear_canal_input);
 
-		log_info(" ear canal output = %f", ear_canal_output);
+		log_info(" ear canal output = %F", ear_canal_output);
 
 		//Acoustic Reflex
 		ar_output = A_RATT * STAPES_SCALAR * ear_canal_output;
-		log_info(" ar_output = %f", ar_output);
+		log_info(" ar_output = %F", ar_output);
 
         filter_1 =
             stapes_hp_b[0] * ar_output + stapes_hp_b[1] * past_stapes_input[0]
@@ -269,7 +269,7 @@ void process_chan(REAL *in_buffer) {
 		multicast_union.f = stapes_displacement;
 
 		//transmit uint output as MC with payload to all DRNLs
-		log_info("sending mc packet with value %f", stapes_displacement);
+		log_info("sending mc packet with value %F", stapes_displacement);
         spin1_send_mc_packet(parameters.key, multicast_union.u, WITH_PAYLOAD);
 	}
 
@@ -410,6 +410,11 @@ bool app_init(uint32_t *timer_period)
     stapes_hp_a[0] = filter_coeffs.sha1;
     stapes_hp_a[1] = filter_coeffs.sha2;
     stapes_hp_a[2] = filter_coeffs.sha3;
+
+    log_info(
+        "shb1 %F, shb2 %F shb3 %F, sha1 %F, sha2 %F sha3 %F",
+        stapes_hp_b[0], stapes_hp_b[1], stapes_hp_b[2], stapes_hp_a[0],
+        stapes_hp_a[1], stapes_hp_a[2]);
 
     REAL stapes_tau = 1.0 / (2 * M_PI * STAPES_1);
     stapes_lp_a[0] = 1.0;
