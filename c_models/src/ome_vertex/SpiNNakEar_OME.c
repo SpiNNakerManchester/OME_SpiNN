@@ -243,6 +243,8 @@ void process_chan(REAL *in_buffer) {
 
 		//Acoustic Reflex
 		ar_output = A_RATT * STAPES_SCALAR * ear_canal_output;
+		log_info(" ar_output = %f", ar_output);
+
         filter_1 =
             stapes_hp_b[0] * ar_output + stapes_hp_b[1] * past_stapes_input[0]
 			+ stapes_hp_b[2] * past_stapes_input[1];

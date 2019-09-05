@@ -287,7 +287,8 @@ class SpiNNakEarApplicationVertex(
         else:
             return int(
                 self._ihcan_neuron_recorder.expected_rows_for_a_run_time(
-                    run_time, local_time_period_map, vertex, sampling_rate))
+                    run_time, local_time_period_map, vertex, sampling_rate) *
+                self._model.seq_size)
 
     @staticmethod
     def fibres_per_ihcan_core(sample_time):
