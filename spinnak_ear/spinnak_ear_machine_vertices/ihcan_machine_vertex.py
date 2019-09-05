@@ -260,7 +260,7 @@ class IHCANMachineVertex(
 
     # recordable units NOTE RJ and ABS have no idea, but we're going with
     # meters for completeness on the MOC.
-    _RECORDABLE_UNITS = {
+    RECORDABLE_UNITS = {
         SPIKES: SPIKES,
         SPIKE_PROB: "percentage"
     }
