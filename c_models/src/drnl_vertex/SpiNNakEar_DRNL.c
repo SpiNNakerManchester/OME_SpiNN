@@ -55,6 +55,7 @@ uint processing;
 uint index_x;
 uint index_y;
 int mc_seg_idx;
+int overall_sample_id = 0;
 uint_float_union MC_union;
 
 double moc;
@@ -267,7 +268,9 @@ uint process_chan(double *out_buffer, float *in_buffer) {
 
 		neuron_recording_set_double_recorded_param(
 		    MOC_RECORDING_REGION, 0, moc);
-		neuron_recording_matrix_record(time);
+		neuron_recording_matrix_record(overall_sample_id);
+        neuron_recording_do_timestep_update(overall_sample_id);
+        overall_sample_id += 1;
 	}
 	return segment_offset;
 }
@@ -377,14 +380,10 @@ void count_ticks(uint null_a, uint null_b) {
     use(null_b);
 
     time++;
+    log_info("time %d, sim ticks %d", time, simulation_ticks);
 
     // make the synapses set off the neuron add input method
     synapses_do_timestep_update(time);
-
-    // update buffered out stuff
-    if (recording_flags > 0) {
-        neuron_recording_do_timestep_update(time);
-    }
 
     // If a fixed number of simulation ticks are specified and these have passed
     if (infinite_run != TRUE && time >= simulation_ticks) {

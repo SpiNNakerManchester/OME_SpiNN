@@ -1013,27 +1013,26 @@ class SpiNNakEarApplicationVertex(
 
     @overrides(AbstractNeuronRecordable.get_data)
     def get_data(
-            self, variable, n_machine_time_steps, placements, graph_mapper,
+            self, variable, run_time, placements, graph_mapper,
             buffer_manager, local_time_period_map):
         if variable == DRNLMachineVertex.MOC:
             return self._drnl_neuron_recorder.get_matrix_data(
                 self._label, buffer_manager,
-                DRNLMachineVertex.MOC_RECORDABLE_REGION_ID,
-                placements, graph_mapper, self, variable,
-                n_machine_time_steps, local_time_period_map)
+                DRNLMachineVertex.MOC_RECORDABLE_REGION_ID, placements,
+                graph_mapper, self, variable, run_time, local_time_period_map)
         elif variable == IHCANMachineVertex.SPIKE_PROB:
             return self._ihcan_neuron_recorder.get_matrix_data(
                 self._label, buffer_manager,
                 IHCANMachineVertex.RECORDING_REGIONS.
                 SPIKE_PROBABILITY_REGION_ID.value,
-                placements, graph_mapper, self, variable,
-                n_machine_time_steps, local_time_period_map)
+                placements, graph_mapper, self, variable, run_time,
+                local_time_period_map)
         elif variable == IHCANMachineVertex.SPIKES:
             return self._ihcan_neuron_recorder.get_spikes(
                 self._label, buffer_manager,
                 IHCANMachineVertex.RECORDING_REGIONS.
-                SPIKE_RECORDING_REGION_ID.value,
-                placements, graph_mapper, self, n_machine_time_steps)
+                SPIKE_RECORDING_REGION_ID.value, placements, graph_mapper,
+                self, run_time)
         else:
             raise ConfigurationException(self.RECORDING_ERROR.format(variable))
 

@@ -77,13 +77,13 @@ REAL past_stapes[2];
 // *************** SIM PARAMS **************** //
 
 //! \brief what tick we're on
-uint32_t read_ticks = 0;
+uint32_t read_ticks = UINT32_MAX;
 
 //! \brief infinite run pointer
 static uint32_t infinite_run;
 
 //! \brief simulation timer tick (based on its time step)
-uint32_t time;
+uint32_t time_to_reach;
 
 //! \brief dtcm buffers
 REAL *dtcm_buffer_a;
@@ -130,34 +130,11 @@ void data_read(uint unused_a, uint unused_b) {
     use(unused_b);
 
 	REAL *dtcm_buffer_in;
+	read_ticks++;
 
-	//read from DMA and copy into DTCM if there is still stuff to read
-	if (read_ticks < parameters.total_ticks) {
-	    #ifdef PROFILE
-            if (seg_index == 0) {
-                profiler_write_entry_disable_irq_fiq(
-                    PROFILER_ENTER | PROFILER_DMA_READ);
-            }
-        #endif
-
-	    read_ticks++;
-
-		//assign receive buffer
-		if (!read_switch) {
-			dtcm_buffer_in = dtcm_buffer_a;
-			read_switch = 1;
-		}
-		else {
-			dtcm_buffer_in = dtcm_buffer_b;
-			read_switch = 0;
-		}
-
-		spin1_dma_transfer(
-		    DMA_TAG, &sdram_in_buffer[seg_index * parameters.seg_size],
-		    dtcm_buffer_in, DMA_READ, parameters.seg_size * sizeof(REAL));
-	}
-   	// stop if desired number of ticks reached
-    else if (read_ticks >= parameters.total_ticks) {
+	// check if there's anything to do
+	if (read_ticks >= parameters.total_ticks ||
+            read_ticks >= time_to_reach) {
         simulation_handle_pause_resume(NULL);
         #ifdef PROFILE
             profiler_write_entry_disable_irq_fiq(
@@ -165,6 +142,33 @@ void data_read(uint unused_a, uint unused_b) {
             profiler_finalise();
         #endif
         simulation_ready_to_read();
+    } else {
+        //read from DMA and copy into DTCM if there is still stuff to read
+        log_info(
+            "read ticks %d, total ticks %d",
+            read_ticks, parameters.total_ticks);
+
+        #ifdef PROFILE
+            if (seg_index == 0) {
+                profiler_write_entry_disable_irq_fiq(
+                    PROFILER_ENTER | PROFILER_DMA_READ);
+            }
+        #endif
+
+        //assign receive buffer
+        if (!read_switch) {
+            dtcm_buffer_in = dtcm_buffer_a;
+            read_switch = 1;
+        }
+        else {
+            dtcm_buffer_in = dtcm_buffer_b;
+            read_switch = 0;
+        }
+
+        // set off a dma
+        spin1_dma_transfer(
+            DMA_TAG, &sdram_in_buffer[seg_index * parameters.seg_size],
+            dtcm_buffer_in, DMA_READ, parameters.seg_size * sizeof(REAL));
     }
 }
 
@@ -173,6 +177,7 @@ void data_read(uint unused_a, uint unused_b) {
 //! \param[in] in_buffer: the buffer to read in from
 //! \return None
 void process_chan(REAL *in_buffer) {
+    log_info("done dma");
     #ifdef PROFILE
         profiler_write_entry_disable_irq_fiq(PROFILER_ENTER | PROFILER_TIMER);
     #endif
@@ -295,8 +300,8 @@ bool app_init(uint32_t *timer_period)
     // Get the timing details and set up the simulation interface
     if (!simulation_initialise(
             data_specification_get_region(SYSTEM, data_address),
-            APPLICATION_NAME_HASH, timer_period, &read_ticks,
-            &infinite_run, &time,
+            APPLICATION_NAME_HASH, timer_period, &time_to_reach,
+            &infinite_run, &read_ticks,
             SDP_PRIORITY, DMA_TRANSFER_DONE_PRIORITY)) {
         return false;
     }
