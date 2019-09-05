@@ -27,12 +27,19 @@ typedef struct data_struct{
     REAL * in_data;
 } data_struct;
 
+//! \brief concha params
+typedef struct concha_params_struct{
+    REAL concha_gain_scalar;
+    REAL ear_canal_gain_scalar;
+} concha_params_struct;
+
 //! \brief data spec regions
 typedef enum regions {
     SYSTEM,
     PARAMS,
     FILTER_COEFFS,
     DATA,
+    CONCHA_PARAMS,
     PROFILER,
     PROVENANCE
 } regions;
@@ -61,15 +68,9 @@ typedef enum callback_priorities {
 
 #define CONCHA_1 1500.0
 
-#define CONCHA_G 0.25
-
 #define EAR_CANAL_L 3000.0
 
 #define EAR_CANAL_H 3800.0
-
-#define CONCHA_GAIN_SCALAR pow(10.0, CONCHA_G)
-
-#define EAR_CANAL_GAIN_SCALAR pow(10.0, CONCHA_G)
 
 //pi reference for filter constant calcs
 #define M_PI acos(-1.0)

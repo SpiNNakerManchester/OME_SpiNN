@@ -242,14 +242,14 @@ class SpiNNakEarApplicationVertex(
         self._drnl_neuron_recorder = NeuronRecorder(
             DRNLMachineVertex.RECORDABLES,
             DRNLMachineVertex.get_matrix_scalar_data_types(),
-            DRNLMachineVertex.get_matrix_output_data_types(), self._n_dnrls)
+            DRNLMachineVertex.get_matrix_output_data_types(),
+            self._n_dnrls)
 
         self._ihcan_neuron_recorder = NeuronRecorder(
             IHCANMachineVertex.RECORDABLES,
             IHCANMachineVertex.get_matrix_scalar_data_types(),
             IHCANMachineVertex.get_matrix_output_data_types(),
-            self._n_dnrls * self._n_fibres_per_ihcan_core *
-            self._model.seq_size)
+            self._n_dnrls * self._n_fibres_per_ihcan_core)
 
         # bool for if state has changed.
         self._change_requires_mapping = True
@@ -276,6 +276,18 @@ class SpiNNakEarApplicationVertex(
     def get_n_keys_for_partition(self, partition, graph_mapper):
         return partition.pre_vertex.get_n_keys_for_partition(
             partition, graph_mapper)
+
+    @overrides(AbstractNeuronRecordable.get_expected_n_rows)
+    def get_expected_n_rows(
+            self, run_time, local_time_period_map, sampling_rate, vertex):
+        if isinstance(vertex, DRNLMachineVertex):
+            return int(self._drnl_neuron_recorder.expected_rows_for_a_run_time(
+                run_time, local_time_period_map, vertex, sampling_rate) *
+                    self._model.seq_size)
+        else:
+            return int(
+                self._ihcan_neuron_recorder.expected_rows_for_a_run_time(
+                    run_time, local_time_period_map, vertex, sampling_rate))
 
     @staticmethod
     def fibres_per_ihcan_core(sample_time):

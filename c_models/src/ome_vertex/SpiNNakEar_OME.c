@@ -97,6 +97,7 @@ REAL *sdram_in_buffer;
 parameters_struct parameters;
 filter_coeffs_struct filter_coeffs;
 data_struct data;
+concha_params_struct concha_params;
 
 //! \brief stores provenance data
 //! \param[in] provenance_region: the sdram location for the prov data.
@@ -193,6 +194,10 @@ void process_chan(REAL *in_buffer) {
 	REAL sub;
 
 	for (int i = 0; i < parameters.seg_size; i++){
+	    log_info("in buffer %d is %f or %x", i, in_buffer[i], in_buffer[i]);
+	}
+
+	for (int i = 0; i < parameters.seg_size; i++){
 		// concha
         filter_1 = (
             concha_filter_b[0] * in_buffer[i] + concha_filter_b[1]
@@ -209,7 +214,9 @@ void process_chan(REAL *in_buffer) {
 		past_concha[1] = past_concha[0];
 		past_concha[0] = concha;
 
-		ear_canal_input = CONCHA_GAIN_SCALAR * concha + in_buffer[i];
+		ear_canal_input = (
+		    concha_params.concha_gain_scalar * concha + in_buffer[i]);
+		log_info(" ear canal input = %f", ear_canal_input);
 
 		//ear canal
 		filter_1 =
@@ -229,7 +236,10 @@ void process_chan(REAL *in_buffer) {
 		past_ear_canal[0] = ear_canal_res;
 
 		ear_canal_output = (
-		    EAR_CANAL_GAIN_SCALAR * ear_canal_res + ear_canal_input);
+		    concha_params.ear_canal_gain_scalar * ear_canal_res +
+		    ear_canal_input);
+
+		log_info(" ear canal output = %f", ear_canal_output);
 
 		//Acoustic Reflex
 		ar_output = A_RATT * STAPES_SCALAR * ear_canal_output;
@@ -349,6 +359,11 @@ bool app_init(uint32_t *timer_period)
     for (int i = 0; i < parameters.seg_size; i++) {
         dtcm_buffer_x[i] = 0;
     }
+
+    spin1_memcpy(
+        &concha_params,
+        data_specification_get_region(CONCHA_PARAMS, data_address),
+        sizeof(concha_params_struct));
 
     // ear speicfics
     REAL concha_q = M_PI * parameters.dt * (REAL)(CONCHA_H -

@@ -69,6 +69,9 @@ class OMEMachineVertex(
     _N_PARAMETER_BYTES = (
         (4 * DataType.UINT32.size) + (1 * DataType.FLOAT_64.size))
 
+    # 1. CONCHA_GAIN_SCALAR, 2. EAR_CANAL_GAIN_SCALAR
+    _N_CONCHA_PARAMS_BYTES = 2 * DataType.FLOAT_64.size
+
     # The filter coeffs
     # 1. shb1, 2. shb2, 3. shb3, 4. sha1, 5.sha2, 6.sha3
     _N_FILTER_COEFFS_ITEMS = 6
@@ -78,7 +81,11 @@ class OMEMachineVertex(
     OME_PARTITION_ID = "OMEData"
 
     # ???????????????
+    MAGIC_THREE = 10.0
     MAGIC_TWO = 700.0
+
+    CONCHA_G = 0.25
+
 
     REGIONS = Enum(
         value="REGIONS",
@@ -86,8 +93,9 @@ class OMEMachineVertex(
                ('PARAMETERS', 1),
                ('FILTER_COEFFS', 2),
                ('DATA', 3),
-               ('PROFILE', 4),
-               ('PROVENANCE', 5)])
+               ("CONCHA_PARAMS", 4),
+               ('PROFILE', 5),
+               ('PROVENANCE', 6)])
 
     # provenance items
     EXTRA_PROVENANCE_DATA_ENTRIES = Enum(
@@ -191,6 +199,8 @@ class OMEMachineVertex(
         sdram = constants.SYSTEM_BYTES_REQUIREMENT
         # params
         sdram += self._N_PARAMETER_BYTES
+        # concha params
+        sdram += self._N_CONCHA_PARAMS_BYTES
         # data
         sdram += self._data_size
         # filter coeffs
@@ -244,6 +254,11 @@ class OMEMachineVertex(
         # reserve data region
         spec.reserve_memory_region(
             self.REGIONS.DATA.value, self._data_size, "data region")
+
+        # reserve concha params
+        spec.reserve_memory_region(
+            self.REGIONS.CONCHA_PARAMS.value, self._N_CONCHA_PARAMS_BYTES,
+            "concha params")
 
         # reserve provenance data region
         self.reserve_provenance_data_region(spec)
@@ -303,6 +318,11 @@ class OMEMachineVertex(
         data = numpy.array(self._data, dtype=numpy.double)
         spec.write_array(data.view(numpy.uint32))
 
+    def _write_concha_params(self, spec):
+        spec.switch_write_focus(self.REGIONS.CONCHA_PARAMS.value)
+        spec.write_value(pow(self.MAGIC_THREE, self.CONCHA_G))
+        spec.write_value(pow(self.MAGIC_THREE, self.CONCHA_G))
+
     @inject_items({
         "routing_info": "MemoryRoutingInfos",
         "tags": "MemoryTags",
@@ -331,6 +351,7 @@ class OMEMachineVertex(
         self._write_filter_coeffs(spec)
         self._write_input_data(spec)
         self._write_profile_dsg(spec)
+        self._write_concha_params(spec)
 
         # End the specification
         spec.end_specification()

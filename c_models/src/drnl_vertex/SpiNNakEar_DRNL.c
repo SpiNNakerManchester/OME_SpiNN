@@ -273,6 +273,7 @@ uint process_chan(double *out_buffer, float *in_buffer) {
 		    MOC_RECORDING_REGION, 0, moc);
 		neuron_recording_matrix_record(overall_sample_id);
         neuron_recording_do_timestep_update(overall_sample_id);
+        log_info("overall sample id is %d", overall_sample_id);
         overall_sample_id += 1;
 	}
 	return segment_offset;
@@ -359,8 +360,7 @@ void data_read(uint mc_key, uint payload) {
             dtcm_buffer_b[mc_seg_idx-1] = MC_union.f;
 
             //completed filling a segment of input values
-            if (mc_seg_idx >= parameters.seq_size)
-            {
+            if (mc_seg_idx >= parameters.seq_size) {
                 mc_seg_idx = 0;
                 read_switch = 0;
                 spin1_schedule_callback(
