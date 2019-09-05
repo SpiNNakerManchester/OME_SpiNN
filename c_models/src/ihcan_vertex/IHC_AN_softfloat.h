@@ -41,7 +41,7 @@
 #define CILIA_FILTER_B1 1.0
 
 //! \brief
-#define CILIA_C 0.3f
+#define CILIA_C 0.05f
 
 //! \brief
 #define CILIA_U0 0.3e-9f
