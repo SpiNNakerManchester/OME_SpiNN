@@ -865,11 +865,8 @@ class SpiNNakEarApplicationVertex(
 
         # an group atoms
         for row_index in range(n_group_tree_rows):
-            n_row_angs = int(
-                numpy.ceil(float(n_angs) / max_input_to_aggregation_group))
-            n_atoms += (n_row_angs * (
-                (row_index + 1) ** max_input_to_aggregation_group))
-            n_angs = n_row_angs
+            n_atoms += n_angs
+
         return n_atoms, n_channels, n_angs
 
     @staticmethod
