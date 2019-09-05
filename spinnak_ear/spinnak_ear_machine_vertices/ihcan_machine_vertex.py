@@ -262,7 +262,7 @@ class IHCANMachineVertex(
     # meters for completeness on the MOC.
     RECORDABLE_UNITS = {
         SPIKES: SPIKES,
-        SPIKE_PROB: "percentage"
+        SPIKE_PROB: "%"
     }
 
     # fibres error
