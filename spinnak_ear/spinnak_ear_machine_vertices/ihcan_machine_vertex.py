@@ -91,7 +91,7 @@ class IHCANMachineVertex(
         "_ihcan_neuron_recorder",
 
         # the slice of atoms for this ihcan vertex from the global atoms
-        "_ihcan_atom_slice",
+        "_ihcan_recording_atom_slice",
 
         # timer period
         "_timer_period"
@@ -307,7 +307,7 @@ class IHCANMachineVertex(
         AbstractReceiveBuffersToHost.__init__(self)
 
         self._ihcan_neuron_recorder = ihcan_neuron_recorder
-        self._ihcan_atom_slice = ihcan_atom_slice
+        self._ihcan_recording_atom_slice = ihcan_atom_slice
         self._ear_index = ear_index
 
         self._re_sample_factor = resample_factor
@@ -328,7 +328,7 @@ class IHCANMachineVertex(
         self._seed = seed
 
     def recorded_slice(self):
-        return self._ihcan_atom_slice
+        return self._ihcan_recording_atom_slice
 
     @staticmethod
     def get_matrix_scalar_data_types():
@@ -426,9 +426,9 @@ class IHCANMachineVertex(
         # recording region
         # recording stuff
         sdram += self._ihcan_neuron_recorder.get_sdram_usage_in_bytes(
-            self._ihcan_atom_slice)
+            self._ihcan_recording_atom_slice)
         variable_sdram = self._ihcan_neuron_recorder.get_variable_sdram_usage(
-            self._ihcan_atom_slice)
+            self._ihcan_recording_atom_slice)
 
         resources = ResourceContainer(
             dtcm=DTCMResource(0),
@@ -598,7 +598,7 @@ class IHCANMachineVertex(
         spec.reserve_memory_region(
             self.REGIONS.NEURON_RECORDING.value,
             self._ihcan_neuron_recorder.get_static_sdram_usage(
-                self._ihcan_atom_slice))
+                self._ihcan_recording_atom_slice))
 
         # profiler region
         self._reserve_profile_memory_regions(spec)
@@ -651,7 +651,7 @@ class IHCANMachineVertex(
         # Write the recording regions
         self._ihcan_neuron_recorder.write_neuron_recording_region(
             spec, self.REGIONS.NEURON_RECORDING.value,
-            self._ihcan_atom_slice, data_n_time_steps)
+            self._ihcan_recording_atom_slice, data_n_time_steps)
 
         # Write profile regions
         self._write_profile_dsg(spec)

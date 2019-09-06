@@ -680,6 +680,8 @@ class SpiNNakEarApplicationVertex(
             int(n_ihcans * IHCANMachineVertex.N_SEEDS_PER_IHCAN_VERTEX),
             replace=False)
 
+        ihcan_recording_index = 0
+
         for drnl_vertex in self._drnl_vertices:
             machine_graph.add_outgoing_edge_partition(
                 ConstantSDRAMMachinePartition(
@@ -711,6 +713,12 @@ class SpiNNakEarApplicationVertex(
                         self._n_fibres_per_ihcan_core *
                         self._model.seq_size) - 1)
 
+                ihcan_recording_slice = Slice(
+                    ihcan_recording_index, ihcan_recording_index + (
+                        self._n_fibres_per_ihcan_core *
+                        self._model.seq_size) - 1)
+                ihcan_recording_index += ihcan_recording_slice.n_atoms
+
                 vertex = IHCANMachineVertex(
                     self._model.resample_factor,
                     ihc_seeds[
@@ -724,7 +732,7 @@ class SpiNNakEarApplicationVertex(
                     chosen_indices.count(self.HSR_FLAG),
                     self._model.n_buffers_in_sdram_total,
                     self._model.seq_size, self._ihcan_neuron_recorder,
-                    ihcan_slice, timer_period)
+                    ihcan_recording_slice, timer_period)
 
                 # update indexes
                 new_low_atom += ihcan_slice.n_atoms
