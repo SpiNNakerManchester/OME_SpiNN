@@ -201,8 +201,8 @@ class SpiNNakEar(AbstractPyNNModel):
         # figure out atoms
         atoms, _, _ = \
             SpiNNakEarApplicationVertex.calculate_n_atoms_for_each_vertex_type(
-                atoms_per_row, self._max_input_to_aggregation_group,
-                n_channels, self._n_fibres_per_ihc, self._seq_size)
+                atoms_per_row, n_channels, self._n_fibres_per_ihc,
+                self._seq_size)
 
         # return atoms
         return atoms

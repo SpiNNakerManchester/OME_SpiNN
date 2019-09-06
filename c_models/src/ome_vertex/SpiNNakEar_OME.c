@@ -112,12 +112,12 @@ void _store_provenance_data(address_t provenance_region) {
     provenance_region[A1] = stapes_hp_a[1];
     provenance_region[A2] = stapes_hp_a[2];
 
-    log_info("b0:%f", stapes_hp_b[0]);
-    log_info("b1:%f", stapes_hp_b[1]);
-    log_info("b2:%f", stapes_hp_b[2]);
-	log_info("a0:%f", stapes_hp_a[0]);
-	log_info("a1:%f", stapes_hp_a[1]);
-    log_info("a2:%f", stapes_hp_a[2]);
+    log_debug("b0:%f", stapes_hp_b[0]);
+    log_debug("b1:%f", stapes_hp_b[1]);
+    log_debug("b2:%f", stapes_hp_b[2]);
+	log_debug("a0:%f", stapes_hp_a[0]);
+	log_debug("a1:%f", stapes_hp_a[1]);
+    log_debug("a2:%f", stapes_hp_a[2]);
 
     log_debug("finished other provenance data");
 }
@@ -145,7 +145,7 @@ void data_read(uint unused_a, uint unused_b) {
         simulation_ready_to_read();
     } else {
         //read from DMA and copy into DTCM if there is still stuff to read
-        log_info(
+        log_debug(
             "read ticks %d, total ticks %d",
             read_ticks, parameters.total_ticks);
 
@@ -178,7 +178,7 @@ void data_read(uint unused_a, uint unused_b) {
 //! \param[in] in_buffer: the buffer to read in from
 //! \return None
 void process_chan(REAL *in_buffer) {
-    log_info("done dma");
+    log_debug("done dma");
     #ifdef PROFILE
         profiler_write_entry_disable_irq_fiq(PROFILER_ENTER | PROFILER_TIMER);
     #endif
@@ -194,7 +194,7 @@ void process_chan(REAL *in_buffer) {
 	REAL sub;
 
 	for (int i = 0; i < parameters.seg_size; i++){
-	    log_info("in buffer %d is %F", i, in_buffer[i]);
+	    log_debug("in buffer %d is %F", i, in_buffer[i]);
 	}
 
 	for (int i = 0; i < parameters.seg_size; i++){
@@ -216,7 +216,7 @@ void process_chan(REAL *in_buffer) {
 
 		ear_canal_input = (
 		    concha_params.concha_gain_scalar * concha + in_buffer[i]);
-		log_info(" ear canal input = %F", ear_canal_input);
+		log_debug(" ear canal input = %F", ear_canal_input);
 
 		//ear canal
 		filter_1 =
@@ -239,11 +239,11 @@ void process_chan(REAL *in_buffer) {
 		    concha_params.ear_canal_gain_scalar * ear_canal_res +
 		    ear_canal_input);
 
-		log_info(" ear canal output = %F", ear_canal_output);
+		log_debug(" ear canal output = %F", ear_canal_output);
 
 		//Acoustic Reflex
 		ar_output = A_RATT * STAPES_SCALAR * ear_canal_output;
-		log_info(" ar_output = %F", ar_output);
+		log_debug(" ar_output = %F", ar_output);
 
         filter_1 =
             stapes_hp_b[0] * ar_output + stapes_hp_b[1] * past_stapes_input[0]
@@ -269,7 +269,7 @@ void process_chan(REAL *in_buffer) {
 		multicast_union.f = stapes_displacement;
 
 		//transmit uint output as MC with payload to all DRNLs
-		log_info("sending mc packet with value %F", stapes_displacement);
+		log_debug("sending mc packet with value %F", stapes_displacement);
         spin1_send_mc_packet(parameters.key, multicast_union.u, WITH_PAYLOAD);
 	}
 
@@ -411,7 +411,7 @@ bool app_init(uint32_t *timer_period)
     stapes_hp_a[1] = filter_coeffs.sha2;
     stapes_hp_a[2] = filter_coeffs.sha3;
 
-    log_info(
+    log_debug(
         "shb1 %F, shb2 %F shb3 %F, sha1 %F, sha2 %F sha3 %F",
         stapes_hp_b[0], stapes_hp_b[1], stapes_hp_b[2], stapes_hp_a[0],
         stapes_hp_a[1], stapes_hp_a[2]);

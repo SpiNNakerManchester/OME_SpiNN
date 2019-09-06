@@ -327,6 +327,9 @@ class IHCANMachineVertex(
         self._n_hsr = n_hsr
         self._seed = seed
 
+    def recorded_slice(self):
+        return self._ihcan_atom_slice
+
     @staticmethod
     def get_matrix_scalar_data_types():
         return {IHCANMachineVertex.SPIKE_PROB: DataType.FLOAT_32}

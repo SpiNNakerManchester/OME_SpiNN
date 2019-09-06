@@ -654,6 +654,9 @@ class DRNLMachineVertex(
         # End the specification
         spec.end_specification()
 
+    def recorded_slice(self):
+        return Slice(self._drnl_index, self._drnl_index)
+
     @overrides(AbstractReceiveBuffersToHost.get_recorded_region_ids)
     def get_recorded_region_ids(self):
         return self._neuron_recorder.recorded_region_ids

@@ -279,16 +279,17 @@ class SpiNNakEarApplicationVertex(
 
     @overrides(AbstractNeuronRecordable.get_expected_n_rows)
     def get_expected_n_rows(
-            self, run_time, local_time_period_map, sampling_rate, vertex):
+            self, run_time, local_time_period_map, sampling_rate, vertex,
+            variable):
         if isinstance(vertex, DRNLMachineVertex):
-            return int(self._drnl_neuron_recorder.expected_rows_for_a_run_time(
-                run_time, local_time_period_map, vertex, sampling_rate) *
-                    self._model.seq_size)
+            return int(
+                (self._drnl_neuron_recorder.expected_rows_for_a_run_time(
+                    run_time, local_time_period_map, vertex, sampling_rate))
+                * self._model.seq_size)
         else:
             return int(
                 self._ihcan_neuron_recorder.expected_rows_for_a_run_time(
-                    run_time, local_time_period_map, vertex, sampling_rate) *
-                self._model.seq_size)
+                    run_time, local_time_period_map, vertex, sampling_rate))
 
     @staticmethod
     def fibres_per_ihcan_core(sample_time):
@@ -343,18 +344,15 @@ class SpiNNakEarApplicationVertex(
             except Exception:
                 self._n_atoms, self._n_dnrls, self._n_final_agg_groups = \
                     self.calculate_n_atoms_for_each_vertex_type(
-                        atoms_per_row,
-                        self._model.max_input_to_aggregation_group,
-                        self._n_channels, self._model.n_fibres_per_ihc,
-                        self._model.seq_size)
+                        atoms_per_row, self._n_channels,
+                        self._model.n_fibres_per_ihc, self._model.seq_size)
                 # save fixed param file
                 self._save_pre_gen_vars(self._model.param_file)
         else:
             self._n_atoms, self._n_dnrls, self._n_final_agg_groups = \
                 self.calculate_n_atoms_for_each_vertex_type(
-                    atoms_per_row, self._model.max_input_to_aggregation_group,
-                    self._n_channels, self._model.n_fibres_per_ihc,
-                    self._model.seq_size)
+                    atoms_per_row, self._n_channels,
+                    self._model.n_fibres_per_ihc, self._model.seq_size)
 
     def process_internal_numbers(self):
 
@@ -864,8 +862,7 @@ class SpiNNakEarApplicationVertex(
 
     @staticmethod
     def calculate_n_atoms_for_each_vertex_type(
-            n_group_tree_rows, max_input_to_aggregation_group, n_channels,
-            n_ihc, seq_size):
+            n_group_tree_rows, n_channels, n_ihc, seq_size):
         # ome atom
         n_atoms = 1
 
@@ -1020,6 +1017,10 @@ class SpiNNakEarApplicationVertex(
             return self._ihcan_neuron_recorder.is_recording(variable)
         else:
             raise ConfigurationException(self.RECORDING_ERROR.format(variable))
+
+    @overrides(AbstractNeuronRecordable.get_recording_slice)
+    def get_recording_slice(self, graph_mapper, vertex):
+        return vertex.recorded_slice()
 
     @overrides(AbstractNeuronRecordable.get_data)
     def get_data(

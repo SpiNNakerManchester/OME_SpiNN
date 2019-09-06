@@ -217,6 +217,8 @@ uint process_chan(double *out_buffer, float *in_buffer) {
         moc_now_1 = moc_now_1 * moc_dec_1 + moc_spike_weight * moc_factor_1;
         moc_now_2 = moc_now_2 * moc_dec_2 + moc_spike_weight * moc_factor_2;
         moc_now_3 = moc_now_3 * moc_dec_3 + moc_spike_weight * moc_factor_3;
+        log_info(
+            " moc 1 %F moc 2 %F moc 3 %F ", moc_now_1, moc_now_2, moc_now_3);
 
         moc = 1.0 / (1 + moc_now_1 + moc_now_2 + moc_now_3);
 
@@ -269,6 +271,7 @@ uint process_chan(double *out_buffer, float *in_buffer) {
 		// changed moc att to channel output
 		out_buffer[i] = (linout2 + non_linout_2b) * moc;
 
+        log_info("recording for moc index %d the value %F", i, moc);
 		neuron_recording_set_double_recorded_param(
 		    MOC_RECORDING_REGION, 0, moc);
 		neuron_recording_matrix_record(overall_sample_id);
@@ -521,6 +524,10 @@ static inline bool app_init(uint32_t *timer_period) {
     moc_dec_1 = double_params.moc_dec_1;
     moc_dec_2 = double_params.moc_dec_2;
     moc_dec_3 = double_params.moc_dec_3;
+
+    log_info("moc dec 1 %F", moc_dec_1);
+    log_info("moc dec 2 %F", moc_dec_2);
+    log_info("moc dec 3 %F", moc_dec_3);
 
     moc_factor_1 = double_params.moc_factor_1;
     moc_factor_2 = 0.0;

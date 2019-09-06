@@ -219,149 +219,150 @@ void process_chan(double *in_buffer) {
 
 	for (int i = 0; i < parameters.seg_size; i++) {
 
-    //==========cilia_params filter===============//
-    double filter_1 = (
-        CILIA_FILTER_B1 * in_buffer[i] + cilia_filter_b2 * past_cilia_disp);
+        //==========cilia_params filter===============//
+        double filter_1 = (
+            CILIA_FILTER_B1 * in_buffer[i] + cilia_filter_b2 * past_cilia_disp);
 
-    double cilia_disp = filter_1 - cilia_filter_a1 * past_cilia_disp;
-    past_cilia_disp = cilia_disp * CILIA_C;
+        double cilia_disp = filter_1 - cilia_filter_a1 * past_cilia_disp;
+        past_cilia_disp = cilia_disp * CILIA_C;
 
-    //===========Apply Scaler============//
-    float utconv = past_cilia_disp;
+        //===========Apply Scaler============//
+        float utconv = past_cilia_disp;
 
-    //=========Apical Conductance========//
-    float ex1 = expk((accum)( -(utconv - CILIA_U1) * cilia_params.recips1));
-    float ex2 = expk((accum)( -(utconv - CILIA_U0) * cilia_params.recips0));
-    float guconv = (CILIA_GA + (CILIA_G_MAX / (1.0f + ex2 * (1.0f + ex1))));
+        //=========Apical Conductance========//
+        float ex1 = expk((accum)( -(utconv - CILIA_U1) * cilia_params.recips1));
+        float ex2 = expk((accum)( -(utconv - CILIA_U0) * cilia_params.recips0));
+        float guconv = (CILIA_GA + (CILIA_G_MAX / (1.0f + ex2 * (1.0f + ex1))));
 
-    //========Receptor Potential=========//
-    ihcv_now += (
-        ((-guconv * (ihcv_now - CILIA_ET)) -
-         (CILIA_GK * (ihcv_now - inner_ear_params.ekp))) * cilia_dt_cap);
+        //========Receptor Potential=========//
+        ihcv_now += (
+            ((-guconv * (ihcv_now - CILIA_ET)) -
+             (CILIA_GK * (ihcv_now - inner_ear_params.ekp))) * cilia_dt_cap);
 
-    //================mICa===============//
-    float ex3 = expk((accum) - GAMMA * ihcv_now);
-    float mi_ca_inf = 1.0f / (1.0f + ex3 * RECIP_BETA);
-    m_ica_curr += (mi_ca_inf - m_ica_curr) * dt_tau_m;
+        //================mICa===============//
+        float ex3 = expk((accum) - GAMMA * ihcv_now);
+        float mi_ca_inf = 1.0f / (1.0f + ex3 * RECIP_BETA);
+        m_ica_curr += (mi_ca_inf - m_ica_curr) * dt_tau_m;
 
-    //================ICa================//
-    float mica_pow_conv = m_ica_curr;
-    for (float k = 0; k < POWER - 1; k++) {
-        mica_pow_conv *= m_ica_curr;
-    }
-    //============Fibres=============//
-    for (int j = 0; j < parameters.number_fibres; j++) {
+        //================ICa================//
+        float mica_pow_conv = m_ica_curr;
+        for (float k = 0; k < POWER - 1; k++) {
+            mica_pow_conv *= m_ica_curr;
+        }
+        //============Fibres=============//
+        for (int j = 0; j < parameters.number_fibres; j++) {
 
-        //======Synaptic Ca========//
-        float i_ca = g_max_ca[j] * mica_pow_conv * (ihcv_now - ECA);
-        float sub1 = i_ca * dt_params.dt;
-        float sub2 = (ca_curr[j] * dt_params.dt) * rec_tau_ca[j];
-        ca_curr[j] += sub1 - sub2;
+            //======Synaptic Ca========//
+            float i_ca = g_max_ca[j] * mica_pow_conv * (ihcv_now - ECA);
+            float sub1 = i_ca * dt_params.dt;
+            float sub2 = (ca_curr[j] * dt_params.dt) * rec_tau_ca[j];
+            ca_curr[j] += sub1 - sub2;
 
-        //invert Ca
-        float pos_ca_curr = -1.0f * ca_curr[j];
-        if (i % parameters.resampling_factor == 0) {
+            //invert Ca
+            float pos_ca_curr = -1.0f * ca_curr[j];
+            if (i % parameters.resampling_factor == 0) {
 
-            //=====Vesicle Release Rate MAP_BS=====//
-            float ca_curr_pow = pos_ca_curr * dt_params.z;
-            for (float k = 0.0; k < POWER - 1; k++) {
-                ca_curr_pow *= pos_ca_curr * dt_params.z;
-            }
+                //=====Vesicle Release Rate MAP_BS=====//
+                float ca_curr_pow = pos_ca_curr * dt_params.z;
+                for (float k = 0.0; k < POWER - 1; k++) {
+                    ca_curr_pow *= pos_ca_curr * dt_params.z;
+                }
 
-            //=====Release Probability=======//
-            float release_prob = ca_curr_pow * dt_spikes;
-            float m_q = synapse_m[j] - an_avail[j];
-            if (m_q < 0.0f) {
-                m_q = 0.0f;
-            }
+                //=====Release Probability=======//
+                float release_prob = ca_curr_pow * dt_spikes;
+                float m_q = synapse_m[j] - an_avail[j];
+                if (m_q < 0.0f) {
+                    m_q = 0.0f;
+                }
 
-            //===========Ejected============//
-            float release_prob_pow = 1.0f;
-            for (float k = 0; k < an_avail[j]; k++) {
-                release_prob_pow =
-                    release_prob_pow * (1.0f - release_prob);
-            }
+                //===========Ejected============//
+                float release_prob_pow = 1.0f;
+                for (float k = 0; k < an_avail[j]; k++) {
+                    release_prob_pow =
+                        release_prob_pow * (1.0f - release_prob);
+                }
 
-            float probability = 1.0f - release_prob_pow;
-            if (refrac[j] > 0) {
-                refrac[j] --;
-            }
+                float probability = 1.0f - release_prob_pow;
+                if (refrac[j] > 0) {
+                    refrac[j] --;
+                }
 
-            float ejected;
-            bool spiked;
-            if (probability > (
-                    (float) mars_kiss64_seed(local_seed) *
-                    inner_ear_params.r_max_recip)) {
-                ejected = 1.0f;
-                if (refrac[j] <= 0) {
-                    log_info("will spike with key %d", parameters.my_key | j);
-                    spiked = TRUE;
-                    spin1_send_mc_packet(
-                        parameters.my_key | j, 0, NO_PAYLOAD);
+                float ejected;
+                bool spiked;
+                if (probability > (
+                        (float) mars_kiss64_seed(local_seed) *
+                        inner_ear_params.r_max_recip)) {
+                    ejected = 1.0f;
+                    if (refrac[j] <= 0) {
+                        log_info(
+                            "will spike with key %d", parameters.my_key | j);
+                        spiked = TRUE;
+                        spin1_send_mc_packet(
+                            parameters.my_key | j, 0, NO_PAYLOAD);
 
-                    refrac[j]= (uint) (
-                        synapse_params.refrac_period + (
-                            ((float) mars_kiss64_seed(local_seed) *
-                            inner_ear_params.r_max_recip) *
-                            synapse_params.refrac_period)
-                             + 0.5f);
+                        refrac[j]= (uint) (
+                            synapse_params.refrac_period + (
+                                ((float) mars_kiss64_seed(local_seed) *
+                                inner_ear_params.r_max_recip) *
+                                synapse_params.refrac_period)
+                                 + 0.5f);
+                    } else {
+                        spiked = FALSE;
+                    }
                 } else {
+                    ejected = 0.0f;
                     spiked = FALSE;
                 }
-            } else {
-                ejected = 0.0f;
-                spiked = FALSE;
-            }
 
-            //=========Reprocessed=========//
-            float repro_rate = synapse_params.xdt;
-            float x_pow = 1.0f;
-            float y_pow = 1.0f;
+                //=========Reprocessed=========//
+                float repro_rate = synapse_params.xdt;
+                float x_pow = 1.0f;
+                float y_pow = 1.0f;
 
-            for (float k = 0.0; k < m_q; k++) {
-                y_pow *= (1.0f - synapse_params.ydt);
-            }
-            for (float k = 0; k < an_repro[j]; k++) {
-                x_pow *= (1.0f - repro_rate);
-            }
+                for (float k = 0.0; k < m_q; k++) {
+                    y_pow *= (1.0f - synapse_params.ydt);
+                }
+                for (float k = 0; k < an_repro[j]; k++) {
+                    x_pow *= (1.0f - repro_rate);
+                }
 
-            probability = 1.0f - x_pow;
-            float reprocessed;
-            if (probability > (
-                    (float) mars_kiss64_seed(local_seed) *
-                    inner_ear_params.r_max_recip)) {
-                reprocessed = 1.0f;
-            } else {
-                reprocessed = 0.0f;
-            }
+                probability = 1.0f - x_pow;
+                float reprocessed;
+                if (probability > (
+                        (float) mars_kiss64_seed(local_seed) *
+                        inner_ear_params.r_max_recip)) {
+                    reprocessed = 1.0f;
+                } else {
+                    reprocessed = 0.0f;
+                }
 
-            //========Replenish==========//
-            probability = 1.0f - y_pow;
-            float replenish;
-            if (probability > (
-                    (float) mars_kiss64_seed(local_seed) *
-                    inner_ear_params.r_max_recip)) {
-                replenish = 1.0f;
-            } else {
-                replenish = 0.0f;
-            }
+                //========Replenish==========//
+                probability = 1.0f - y_pow;
+                float replenish;
+                if (probability > (
+                        (float) mars_kiss64_seed(local_seed) *
+                        inner_ear_params.r_max_recip)) {
+                    replenish = 1.0f;
+                } else {
+                    replenish = 0.0f;
+                }
 
-            //==========Update Variables=========//
-            an_avail[j] = an_avail[j] + replenish + reprocessed - ejected;
-            float re_uptake_and_lost =
-                (synapse_params.rdt + synapse_params.ldt) * an_cleft[j];
-            float re_uptake = synapse_params.rdt * an_cleft[j];
-            an_cleft[j] = an_cleft[j] + ejected - re_uptake_and_lost;
-            an_repro[j] = an_repro[j] + re_uptake - reprocessed;
+                //==========Update Variables=========//
+                an_avail[j] = an_avail[j] + replenish + reprocessed - ejected;
+                float re_uptake_and_lost =
+                    (synapse_params.rdt + synapse_params.ldt) * an_cleft[j];
+                float re_uptake = synapse_params.rdt * an_cleft[j];
+                an_cleft[j] = an_cleft[j] + ejected - re_uptake_and_lost;
+                an_repro[j] = an_repro[j] + re_uptake - reprocessed;
 
-            //=======write output value to buffer to go to SDRAM ========//
-            if (spiked) {
-                neuron_recording_set_spike((j * parameters.seg_size) + i);
-            }
-            neuron_recording_set_float_recorded_param(
-                SPIKE_PROBABILITY_REGION_ID, (j * parameters.seg_size) + i,
-                ca_curr_pow);
-            }
+                //=======write output value to buffer to go to SDRAM ========//
+                if (spiked) {
+                    neuron_recording_set_spike((j * parameters.seg_size) + i);
+                }
+                neuron_recording_set_float_recorded_param(
+                    SPIKE_PROBABILITY_REGION_ID, (j * parameters.seg_size) + i,
+                    ca_curr_pow);
+                }
         }
     }
 	// set off the record to sdram
