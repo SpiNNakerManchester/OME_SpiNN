@@ -249,7 +249,7 @@ class SpiNNakEarApplicationVertex(
             IHCANMachineVertex.RECORDABLES,
             IHCANMachineVertex.get_matrix_scalar_data_types(),
             IHCANMachineVertex.get_matrix_output_data_types(),
-            self._n_dnrls * self._n_fibres_per_ihcan_core)
+            self._n_dnrls * self._n_fibres_per_ihc)
 
         # bool for if state has changed.
         self._change_requires_mapping = True
