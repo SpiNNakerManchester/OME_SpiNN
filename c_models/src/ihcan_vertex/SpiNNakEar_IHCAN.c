@@ -219,6 +219,8 @@ void process_chan(double *in_buffer) {
 
 	for (int i = 0; i < parameters.seg_size; i++) {
 
+	    log_info("in buffer %d is %f", i, in_buffer[i]);
+
         //==========cilia_params filter===============//
         double filter_1 = (
             CILIA_FILTER_B1 * in_buffer[i] + cilia_filter_b2 * past_cilia_disp);
@@ -362,6 +364,7 @@ void process_chan(double *in_buffer) {
                 neuron_recording_set_float_recorded_param(
                     SPIKE_PROBABILITY_REGION_ID, (j * parameters.seg_size) + i,
                     ca_curr_pow);
+                 log_info(" ca curr pow = %f", ca_curr_pow);
                 }
         }
     }
@@ -510,6 +513,9 @@ bool app_init(uint32_t *timer_period)
 	}
 
 	// set up recording
+	log_info(
+	    "address of recording %x",
+	    data_specification_get_region(NEURON_RECORDING, data_address));
 	if (!neuron_recording_initialise(
             data_specification_get_region(NEURON_RECORDING, data_address),
             &recording_flags, parameters.number_fibres * parameters.seg_size)) {

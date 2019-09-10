@@ -224,6 +224,5 @@ void c_main() {
     spin1_callback_on(MC_PACKET_RECEIVED, spike_rx, MC);
     spin1_callback_on(TIMER_TICK, count_ticks, TIMER);
 
-
     simulation_run();
 }

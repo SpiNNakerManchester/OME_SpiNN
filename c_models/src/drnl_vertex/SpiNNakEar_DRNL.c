@@ -148,6 +148,10 @@ void data_write(uint arg_1, uint arg_2)
         dtcm_buffer_out = dtcm_buffer_y;
     }
 
+    for (uint32_t i = 0; i < parameters.seq_size; i++){
+        log_info("dtcm buffer %i has %F", i, dtcm_buffer_out[i]);
+    }
+
     spin1_dma_transfer(
         DMA_WRITE, &sdram_out_buffer[out_index],
         dtcm_buffer_out, DMA_WRITE,
@@ -349,6 +353,9 @@ void data_read(uint mc_key, uint payload) {
         //assign receive buffer
         if (!read_switch) {
             dtcm_buffer_a[mc_seg_idx-1] = MC_union.f;
+            log_info(
+                "dtcm buffer a %d is %f",
+                mc_seg_idx-1, dtcm_buffer_a[mc_seg_idx-1]);
 
             //completed filling a segment of input values
             if (mc_seg_idx >= parameters.seq_size) {
@@ -361,6 +368,10 @@ void data_read(uint mc_key, uint payload) {
         }
         else {
             dtcm_buffer_b[mc_seg_idx-1] = MC_union.f;
+
+            log_info(
+                "dtcm buffer b %d is %f",
+                mc_seg_idx-1, dtcm_buffer_b[mc_seg_idx-1]);
 
             //completed filling a segment of input values
             if (mc_seg_idx >= parameters.seq_size) {
@@ -389,7 +400,7 @@ void count_ticks(uint null_a, uint null_b) {
     log_info("time %d, sim ticks %d", time, simulation_ticks);
 
     // make the synapses set off the neuron add input method
-    synapses_do_timestep_update(time);
+    //synapses_do_timestep_update(time);
 
     // If a fixed number of simulation ticks are specified and these have passed
     if (infinite_run != TRUE && time >= simulation_ticks) {
@@ -449,9 +460,7 @@ static inline bool app_init(uint32_t *timer_period) {
         sizeof(sdram_out_buffer_param));
 	sdram_out_buffer = sdram_params.sdram_base_address;
 
-    log_info(
-        "[core %d] sdram out buffer @ 0x%08x\n",
-        spin1_get_core_id(), (uint) sdram_out_buffer);
+    log_info("sdram out buffer %x", sdram_out_buffer);
 
 	//DTCM input buffers
 	dtcm_buffer_a = (float *) sark_alloc (parameters.seq_size, sizeof(float));
@@ -535,20 +544,21 @@ static inline bool app_init(uint32_t *timer_period) {
 
     // Set up the synapses
     uint32_t *ring_buffer_to_input_buffer_left_shifts;
-    if (!synapses_initialise(
-            data_specification_get_region(SYNAPSE_PARAMS, data_address),
-            1, parameters.n_synapse_types,
-            &ring_buffer_to_input_buffer_left_shifts)) {
-        return false;
-    }
+    log_info(" n synase tpyes = %d",  parameters.n_synapse_types);
+    //if (!synapses_initialise(
+    //        data_specification_get_region(SYNAPSE_PARAMS, data_address),
+    //        1, parameters.n_synapse_types,
+    //        &ring_buffer_to_input_buffer_left_shifts)) {
+    //    return false;
+    //}
 
     // set up direct synapses
     address_t direct_synapses_address = NULL;
-    if (!direct_synapses_initialise(
-            data_specification_get_region(DIRECT_MATRIX, data_address),
-            &direct_synapses_address)){
-        return false;
-    }
+    //if (!direct_synapses_initialise(
+    //        data_specification_get_region(DIRECT_MATRIX, data_address),
+    //        &direct_synapses_address)){
+    //    return false;
+    //}
 
     // Set up the population table
     uint32_t row_max_n_words;
@@ -561,24 +571,24 @@ static inline bool app_init(uint32_t *timer_period) {
 
 
     // Set up the synapse dynamics
-    address_t synapse_dynamics_region_address =
-        data_specification_get_region(SYNAPSE_DYNAMICS, data_address);
-    synapse_dynamics_initialise(
-        synapse_dynamics_region_address, 1, parameters.n_synapse_types,
-        ring_buffer_to_input_buffer_left_shifts);
+    //address_t synapse_dynamics_region_address =
+    //    data_specification_get_region(SYNAPSE_DYNAMICS, data_address);
+    //synapse_dynamics_initialise(
+    //    synapse_dynamics_region_address, 1, parameters.n_synapse_types,
+    //    ring_buffer_to_input_buffer_left_shifts);
 
     // set up spike processing
-    if (!spike_processing_initialise(
-            row_max_n_words, MC_PACKET_PRIORITY, DATA_WRITE_PRIORITY,
-            INCOMING_SPIKE_BUFFER_SIZE)) {
-        return false;
-    }
+    //if (!spike_processing_initialise(
+    //        row_max_n_words, MC_PACKET_PRIORITY, DATA_WRITE_PRIORITY,
+    //        INCOMING_SPIKE_BUFFER_SIZE)) {
+    //    return false;
+    //}
 
-    log_info("initialising the bit field region");
-    if (!bit_field_filter_initialise(
-            data_specification_get_region(BIT_FIELD_FILTER, data_address))){
-        return false;
-    }
+    //log_info("initialising the bit field region");
+    //if (!bit_field_filter_initialise(
+    //        data_specification_get_region(BIT_FIELD_FILTER, data_address))){
+    //    return false;
+    //}
 
     if (!neuron_recording_initialise(
             data_specification_get_region(NEURON_RECORDING, data_address),
