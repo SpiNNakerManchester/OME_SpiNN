@@ -233,6 +233,7 @@ uint process_chan(double *out_buffer, float *in_buffer) {
         if (moc < 0.0) {
             log_error("out of bounds moc_n%d", moc);
         }
+
 		// original moc att location
 		//non_linout_2a *= moc;
 
@@ -270,8 +271,6 @@ uint process_chan(double *out_buffer, float *in_buffer) {
 		nlin_y2b[0] = nlin_y2b[1];
 		nlin_y2b[1] = non_linout_2b;
 
-		//save to buffer
-		//out_buffer[i] = linout2 + non_linout_2b;
 		// changed moc att to channel output
 		out_buffer[i] = (linout2 + non_linout_2b) * moc;
 
@@ -400,7 +399,7 @@ void count_ticks(uint null_a, uint null_b) {
     log_info("time %d, sim ticks %d", time, simulation_ticks);
 
     // make the synapses set off the neuron add input method
-    //synapses_do_timestep_update(time);
+    synapses_do_timestep_update(time);
 
     // If a fixed number of simulation ticks are specified and these have passed
     if (infinite_run != TRUE && time >= simulation_ticks) {
@@ -545,20 +544,20 @@ static inline bool app_init(uint32_t *timer_period) {
     // Set up the synapses
     uint32_t *ring_buffer_to_input_buffer_left_shifts;
     log_info(" n synase tpyes = %d",  parameters.n_synapse_types);
-    //if (!synapses_initialise(
-    //        data_specification_get_region(SYNAPSE_PARAMS, data_address),
-    //        1, parameters.n_synapse_types,
-    //        &ring_buffer_to_input_buffer_left_shifts)) {
-    //    return false;
-    //}
+    if (!synapses_initialise(
+            data_specification_get_region(SYNAPSE_PARAMS, data_address),
+            1, parameters.n_synapse_types,
+            &ring_buffer_to_input_buffer_left_shifts)) {
+        return false;
+    }
 
     // set up direct synapses
     address_t direct_synapses_address = NULL;
-    //if (!direct_synapses_initialise(
-    //        data_specification_get_region(DIRECT_MATRIX, data_address),
-    //        &direct_synapses_address)){
-    //    return false;
-    //}
+    if (!direct_synapses_initialise(
+            data_specification_get_region(DIRECT_MATRIX, data_address),
+            &direct_synapses_address)){
+        return false;
+    }
 
     // Set up the population table
     uint32_t row_max_n_words;
@@ -569,26 +568,25 @@ static inline bool app_init(uint32_t *timer_period) {
         return false;
     }
 
-
     // Set up the synapse dynamics
-    //address_t synapse_dynamics_region_address =
-    //    data_specification_get_region(SYNAPSE_DYNAMICS, data_address);
-    //synapse_dynamics_initialise(
-    //    synapse_dynamics_region_address, 1, parameters.n_synapse_types,
-    //    ring_buffer_to_input_buffer_left_shifts);
+    address_t synapse_dynamics_region_address =
+        data_specification_get_region(SYNAPSE_DYNAMICS, data_address);
+    synapse_dynamics_initialise(
+        synapse_dynamics_region_address, 1, parameters.n_synapse_types,
+        ring_buffer_to_input_buffer_left_shifts);
 
     // set up spike processing
-    //if (!spike_processing_initialise(
-    //        row_max_n_words, MC_PACKET_PRIORITY, DATA_WRITE_PRIORITY,
-    //        INCOMING_SPIKE_BUFFER_SIZE)) {
-    //    return false;
-    //}
+    if (!spike_processing_initialise(
+            row_max_n_words, MC_PACKET_PRIORITY, DATA_WRITE_PRIORITY,
+            INCOMING_SPIKE_BUFFER_SIZE)) {
+        return false;
+    }
 
-    //log_info("initialising the bit field region");
-    //if (!bit_field_filter_initialise(
-    //        data_specification_get_region(BIT_FIELD_FILTER, data_address))){
-    //    return false;
-    //}
+    log_info("initialising the bit field region");
+    if (!bit_field_filter_initialise(
+            data_specification_get_region(BIT_FIELD_FILTER, data_address))){
+        return false;
+    }
 
     if (!neuron_recording_initialise(
             data_specification_get_region(NEURON_RECORDING, data_address),
