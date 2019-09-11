@@ -112,12 +112,12 @@ void _store_provenance_data(address_t provenance_region) {
     provenance_region[A1] = stapes_hp_a[1];
     provenance_region[A2] = stapes_hp_a[2];
 
-    log_debug("b0:%f", stapes_hp_b[0]);
-    log_debug("b1:%f", stapes_hp_b[1]);
-    log_debug("b2:%f", stapes_hp_b[2]);
-	log_debug("a0:%f", stapes_hp_a[0]);
-	log_debug("a1:%f", stapes_hp_a[1]);
-    log_debug("a2:%f", stapes_hp_a[2]);
+    log_info("b0:%F", stapes_hp_b[0]);
+    log_info("b1:%F", stapes_hp_b[1]);
+    log_info("b2:%F", stapes_hp_b[2]);
+	log_info("a0:%F", stapes_hp_a[0]);
+	log_info("a1:%F", stapes_hp_a[1]);
+    log_info("a2:%F", stapes_hp_a[2]);
 
     log_debug("finished other provenance data");
 }
@@ -136,6 +136,7 @@ void data_read(uint unused_a, uint unused_b) {
 	// check if there's anything to do
 	if (read_ticks >= parameters.total_ticks ||
             read_ticks >= time_to_reach) {
+
         simulation_handle_pause_resume(NULL);
         #ifdef PROFILE
             profiler_write_entry_disable_irq_fiq(
@@ -194,7 +195,7 @@ void process_chan(REAL *in_buffer) {
 	REAL sub;
 
 	for (int i = 0; i < parameters.seg_size; i++){
-	    log_debug("in buffer %d is %F", i, in_buffer[i]);
+	    log_info("in buffer %d is %F", i, in_buffer[i]);
 	}
 
 	for (int i = 0; i < parameters.seg_size; i++){
@@ -266,10 +267,12 @@ void process_chan(REAL *in_buffer) {
 		past_stapes_disp = stapes_displacement;
 
         //assign output to float/uint union
-		multicast_union.f = stapes_displacement;
+        multicast_union.f = stapes_displacement;
 
 		//transmit uint output as MC with payload to all DRNLs
-		log_info("sending mc packet with value %F", stapes_displacement);
+		log_debug(
+		    "i=%d %u",
+		    ((seg_index - 1) * parameters.seg_size) + i, multicast_union.u);
         spin1_send_mc_packet(parameters.key, multicast_union.u, WITH_PAYLOAD);
 	}
 
@@ -360,15 +363,28 @@ bool app_init(uint32_t *timer_period)
         data_specification_get_region(CONCHA_PARAMS, data_address),
         sizeof(concha_params_struct));
 
+    log_info(
+        "concha gain scalar = %k, ear canal gain scalar = %k",
+        (accum) concha_params.concha_gain_scalar,
+        (accum) concha_params.ear_canal_gain_scalar);
+
+
+    log_info(
+        "concha gain scalar = %F, ear canal gain scalar = %F",
+        concha_params.concha_gain_scalar, concha_params.ear_canal_gain_scalar);
+
     // ear speicfics
-    REAL concha_q = (double) M_PI * parameters.dt * (REAL)(CONCHA_H - CONCHA_1);
+    double m_pi = acos(-1.0);
+    REAL concha_q = m_pi * parameters.dt * (REAL)(CONCHA_H - CONCHA_1);
     REAL concha_j = 1.0 / (1.0 + (1.0 / tan(concha_q)));
 
+    log_info("concha_j %k", (accum) concha_j);
+
     log_debug(" concha Q %F", concha_q);
-    log_debug("pi is %F", (double) M_PI);
+    log_debug("pi is %F", m_pi);
 
     REAL concha_k =
-        (2.0 * cos(M_PI * parameters.dt * (REAL)(CONCHA_H + CONCHA_1))) /
+        (2.0 * cos(m_pi * parameters.dt * (REAL)(CONCHA_H + CONCHA_1))) /
         ((1.0 + tan(concha_q)) * cos(concha_q));
     REAL concha_l = (tan(concha_q) - 1.0) / (tan(concha_q) + 1.0);
 
@@ -379,15 +395,20 @@ bool app_init(uint32_t *timer_period)
     concha_filter_a[1] = -1.0 * concha_k;
     concha_filter_a[2] = -1.0 * concha_l;
 
-    log_debug(
+    log_info(
         "filter b0 %F, b1 %F, b2 %F, a0 %F, a1 %F, a2 %F",
         concha_filter_b[0], concha_filter_b[1], concha_filter_b[2],
         concha_filter_a[0], concha_filter_a[1], concha_filter_a[2]);
 
-    REAL ear_canal_q = M_PI * parameters.dt * (EAR_CANAL_H - EAR_CANAL_L);
+    log_info(
+        "filter b0 %k, b1 %k, b2 %k, a0 %k, a1 %k, a2 %k",
+        (accum)concha_filter_b[0], (accum)concha_filter_b[1], (accum)concha_filter_b[2],
+        (accum)concha_filter_a[0], (accum)concha_filter_a[1], (accum)concha_filter_a[2]);
+
+    REAL ear_canal_q = m_pi * parameters.dt * (EAR_CANAL_H - EAR_CANAL_L);
     REAL ear_canal_j = 1.0 / (1.0 + (1.0 / tan(ear_canal_q)));
     REAL ear_canal_k =
-        (2.0 * cos(M_PI * parameters.dt * (EAR_CANAL_H + EAR_CANAL_L))) / (
+        (2.0 * cos(m_pi * parameters.dt * (EAR_CANAL_H + EAR_CANAL_L))) / (
             (1.0 + tan(ear_canal_q)) * cos(ear_canal_q));
     REAL ear_canal_l = (tan(ear_canal_q) - 1.0) / (tan(ear_canal_q) + 1.0);
 
@@ -412,12 +433,12 @@ bool app_init(uint32_t *timer_period)
     stapes_hp_a[1] = filter_coeffs.sha2;
     stapes_hp_a[2] = filter_coeffs.sha3;
 
-    log_debug(
+    log_info(
         "shb1 %F, shb2 %F shb3 %F, sha1 %F, sha2 %F sha3 %F",
         stapes_hp_b[0], stapes_hp_b[1], stapes_hp_b[2], stapes_hp_a[0],
         stapes_hp_a[1], stapes_hp_a[2]);
 
-    REAL stapes_tau = 1.0 / (2 * M_PI * STAPES_1);
+    REAL stapes_tau = 1.0 / (2 * m_pi * STAPES_1);
     stapes_lp_a[0] = 1.0;
     stapes_lp_a[1] = parameters.dt / stapes_tau -1.0;
     stapes_lp_b = 1.0 + stapes_lp_a[1];

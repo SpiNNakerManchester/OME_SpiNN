@@ -325,8 +325,10 @@ class OMEMachineVertex(
 
     def _write_concha_params(self, spec):
         spec.switch_write_focus(self.REGIONS.CONCHA_PARAMS.value)
-        spec.write_value(pow(self.MAGIC_THREE, self.CONCHA_G))
-        spec.write_value(pow(self.MAGIC_THREE, self.CONCHA_G))
+        spec.write_value(
+            pow(self.MAGIC_THREE, self.CONCHA_G), DataType.FLOAT_64)
+        spec.write_value(
+            pow(self.MAGIC_THREE, self.CONCHA_G), DataType.FLOAT_64)
 
     @inject_items({
         "routing_info": "MemoryRoutingInfos",

@@ -238,7 +238,8 @@ uint process_chan(double *out_buffer, float *in_buffer) {
             log_error("out of bounds moc_n%d", moc);
         }
 
-		// original moc att location
+		// original moc att location (robert wants to keep this for future
+		// students)
 		//non_linout_2a *= moc;
 
 		//stage 2

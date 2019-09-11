@@ -252,6 +252,7 @@ void process_chan(double *in_buffer) {
         for (float k = 0; k < POWER - 1; k++) {
             mica_pow_conv *= m_ica_curr;
         }
+
         //============Fibres=============//
         for (int j = 0; j < parameters.number_fibres; j++) {
 
@@ -362,11 +363,12 @@ void process_chan(double *in_buffer) {
                 if (spiked) {
                     neuron_recording_set_spike((j * parameters.seg_size) + i);
                 }
+
                 neuron_recording_set_float_recorded_param(
                     SPIKE_PROBABILITY_REGION_ID, (j * parameters.seg_size) + i,
                     ca_curr_pow);
                  log_info(" ca curr pow = %f", ca_curr_pow);
-                }
+             }
         }
     }
 	// set off the record to sdram

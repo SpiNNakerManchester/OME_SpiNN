@@ -17,8 +17,8 @@ class SpiNNakEar(AbstractPyNNModel):
 
     # defaults magic numbers
     _DEFAULT_MAX_INPUT_TO_AGGREGATION_GROUP = 2
-    _DEFAULT_N_LSR_PER_IHC = 2
-    _DEFAULT_N_MSR_PER_IHC = 2
+    _DEFAULT_N_LSR_PER_IHC = 4
+    _DEFAULT_N_MSR_PER_IHC = 0
     _DEFAULT_N_HSR_PER_IHC = 6
     _DEFAULT_AUDIO_SAMPLING_FREQUENCY = 22050.0
     _DEFAULT_RANDOM_SEED = 44444
@@ -185,7 +185,8 @@ class SpiNNakEar(AbstractPyNNModel):
         # figure how many hair bits per ihcan core
         n_fibres_per_ihcan_core = \
             SpiNNakEarApplicationVertex.fibres_per_ihcan_core(
-                globals_variables.get_simulator().time_scale_factor / self._fs)
+                globals_variables.get_simulator().time_scale_factor / self._fs,
+                self._n_fibres_per_ihc)
 
         # NOTE the wrapping to a whole number of channels
         n_channels = (

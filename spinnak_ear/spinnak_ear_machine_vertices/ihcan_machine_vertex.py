@@ -488,6 +488,7 @@ class IHCANMachineVertex(
         # Write the routing key
         key = routing_info.get_first_key_from_pre_vertex(
             self, self.IHCAN_PARTITION_ID)
+        print("A")
         spec.write_value(key)
 
     def _fill_in_cilia_parameter_region(self, spec):

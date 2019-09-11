@@ -230,7 +230,8 @@ class SpiNNakEarApplicationVertex(
         self._pole_freqs = self._process_pole_freqs()
 
         # how many fibres / atoms ran on each ihcan core
-        self._n_fibres_per_ihcan_core = self.fibres_per_ihcan_core(sample_time)
+        self._n_fibres_per_ihcan_core = self.fibres_per_ihcan_core(
+            sample_time, self._model.n_fibres_per_ihc)
 
         # process all the other internal numbers
         atoms_per_row = self.process_internal_numbers()
@@ -292,13 +293,14 @@ class SpiNNakEarApplicationVertex(
                     run_time, local_time_period_map, vertex, sampling_rate))
 
     @staticmethod
-    def fibres_per_ihcan_core(sample_time):
+    def fibres_per_ihcan_core(sample_time, n_fibres_per_ihc):
         # how many fibras / atoms ran on each ihcan core
-        return abs(int(
+        max_possible = abs(int(
             math.floor(
-                ((sample_time / MICRO_TO_SECOND_CONVERSION) -
+                ((sample_time * MICRO_TO_SECOND_CONVERSION) -
                  SpiNNakEarApplicationVertex.CURVE_ONE) /
                 SpiNNakEarApplicationVertex.CURVE_TWO)))
+        return min(n_fibres_per_ihc, max_possible, 2)
 
     @overrides(AbstractAcceptsIncomingSynapses.gen_on_machine)
     def gen_on_machine(self, vertex_slice):
