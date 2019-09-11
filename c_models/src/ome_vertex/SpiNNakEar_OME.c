@@ -303,8 +303,6 @@ void transfer_handler(uint unused0, uint unused1) {
 //! \return bool saying if the init was successful or not
 bool app_init(uint32_t *timer_period)
 {
-	log_info("[core %d] -----------------------\n", spin1_get_core_id());
-	log_info("[core %d] starting simulation\n", spin1_get_core_id());
 	//obtain data spec
 	data_specification_metadata_t *data_address =
 	    data_specification_get_data_address();
@@ -328,15 +326,13 @@ bool app_init(uint32_t *timer_period)
         &parameters, data_specification_get_region(PARAMS, data_address),
          sizeof(parameters_struct));
 
-    // Get the runtime
-    log_info("total_ticks=%d", parameters.total_ticks);
+    log_debug("dt is %F", parameters.dt);
+    log_debug("total_ticks=%d", parameters.total_ticks);
+    log_debug("OME-->DRNL key=%d\n", parameters.key);
 
     // Get a pointer to the input data buffer
     sdram_in_buffer =
         (REAL *) data_specification_get_region(DATA, data_address);
-
-    // Get the key to send the data with
-    log_info("OME-->DRNL key=%d\n", parameters.key);
 
 	// Allocate buffers
 	//input double buffers
@@ -346,12 +342,9 @@ bool app_init(uint32_t *timer_period)
 
 	if (dtcm_buffer_a == NULL || dtcm_buffer_b == NULL
 	        || dtcm_buffer_x== NULL || sdram_in_buffer == NULL) {
-		log_info(
-		    "[core %d] error - cannot allocate buffer\n",
-		    spin1_get_core_id());
+		log_error("error - cannot allocate buffer\n");
 		return false;
 	}
-
 
     // initialise buffers
     for (int i = 0; i < parameters.seg_size; i++) {
@@ -368,9 +361,12 @@ bool app_init(uint32_t *timer_period)
         sizeof(concha_params_struct));
 
     // ear speicfics
-    REAL concha_q = M_PI * parameters.dt * (REAL)(CONCHA_H -
-    CONCHA_1);
+    REAL concha_q = (double) M_PI * parameters.dt * (REAL)(CONCHA_H - CONCHA_1);
     REAL concha_j = 1.0 / (1.0 + (1.0 / tan(concha_q)));
+
+    log_debug(" concha Q %F", concha_q);
+    log_debug("pi is %F", (double) M_PI);
+
     REAL concha_k =
         (2.0 * cos(M_PI * parameters.dt * (REAL)(CONCHA_H + CONCHA_1))) /
         ((1.0 + tan(concha_q)) * cos(concha_q));
@@ -382,6 +378,11 @@ bool app_init(uint32_t *timer_period)
     concha_filter_a[0] = 1.0;
     concha_filter_a[1] = -1.0 * concha_k;
     concha_filter_a[2] = -1.0 * concha_l;
+
+    log_debug(
+        "filter b0 %F, b1 %F, b2 %F, a0 %F, a1 %F, a2 %F",
+        concha_filter_b[0], concha_filter_b[1], concha_filter_b[2],
+        concha_filter_a[0], concha_filter_a[1], concha_filter_a[2]);
 
     REAL ear_canal_q = M_PI * parameters.dt * (EAR_CANAL_H - EAR_CANAL_L);
     REAL ear_canal_j = 1.0 / (1.0 + (1.0 / tan(ear_canal_q)));

@@ -217,10 +217,11 @@ void data_read(uint mc_key, uint payload) {
 //select correct output buffer type
 void process_chan(double *in_buffer) {
 
+    for (int i = 0; i < parameters.seg_size; i++) {
+        log_info("in buffer %d is %f", i, in_buffer[i]);
+    }
+
 	for (int i = 0; i < parameters.seg_size; i++) {
-
-	    log_info("in buffer %d is %f", i, in_buffer[i]);
-
         //==========cilia_params filter===============//
         double filter_1 = (
             CILIA_FILTER_B1 * in_buffer[i] + cilia_filter_b2 * past_cilia_disp);

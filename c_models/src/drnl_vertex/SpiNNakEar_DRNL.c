@@ -132,10 +132,12 @@ void neuron_add_inputs(
 void data_write(uint arg_1, uint arg_2)
 {
 	if (arg_1 == 0 && arg_2 == 0){
+	    log_info("synaptic dma read");
 	    setup_synaptic_dma_read();
 	    return;
 	}
 
+    log_info("ear dma read");
 	double *dtcm_buffer_out;
 	uint out_index;
 
@@ -149,7 +151,9 @@ void data_write(uint arg_1, uint arg_2)
     }
 
     for (uint32_t i = 0; i < parameters.seq_size; i++){
-        log_info("dtcm buffer %i has %F", i, dtcm_buffer_out[i]);
+        log_info("dtcm output buffer %d has %F",
+        i + (time * parameters.seq_size),
+        dtcm_buffer_out[i]);
     }
 
     spin1_dma_transfer(

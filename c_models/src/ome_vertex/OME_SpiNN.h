@@ -9,6 +9,7 @@ typedef struct parameters_struct{
     uint32_t total_ticks;
     int seg_size;
     uint key;
+    uint PADDING;
     REAL dt;
 } parameters_struct;
 
@@ -71,9 +72,6 @@ typedef enum callback_priorities {
 #define EAR_CANAL_L 3000.0
 
 #define EAR_CANAL_H 3800.0
-
-//pi reference for filter constant calcs
-#define M_PI acos(-1.0)
 
 // ABS HOW, given this has no spike input?!
 #define A_RATT 1.0 //TODO: this should be determined by spiking input

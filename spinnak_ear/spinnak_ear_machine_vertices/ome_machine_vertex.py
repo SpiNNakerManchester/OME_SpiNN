@@ -287,8 +287,13 @@ class OMEMachineVertex(
             self, self.OME_PARTITION_ID)
         spec.write_value(data_key)
 
+        # padding due to utilising a struct in the c code.
+        # NOTE DO NOT REMOVE!
+        spec.write_value(0)
+
         # Write dt
-        spec.write_value(1.0 / self._fs, DataType.FLOAT_64)
+        dt = 1.0 / self._fs
+        spec.write_value(dt, DataType.FLOAT_64)
 
     def _write_filter_coeffs(self, spec):
         """ write filter coeffs to dsg
