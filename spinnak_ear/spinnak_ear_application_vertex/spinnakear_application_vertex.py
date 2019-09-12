@@ -369,18 +369,26 @@ class SpiNNakEarApplicationVertex(
             self._n_fibres_per_ihcan_core,
             self._model.max_input_to_aggregation_group)
 
-        # ????????
-        max_n_atoms_per_group_tree_row = (
-            (self._model.max_input_to_aggregation_group **
-             numpy.arange(1, atoms_per_row + 1)) *
-            self._n_fibres_per_ihcan_core)
+        # if no rows, then just add 1 row with 1 vertex.
+        if atoms_per_row == 0:
+            self._n_group_tree_rows = 1
+            return self._n_fibres_per_ihcan_core
+        else:
 
-        # ????????????
-        max_n_atoms_per_group_tree_row = \
-            max_n_atoms_per_group_tree_row[
-                max_n_atoms_per_group_tree_row <= self._FINAL_ROW_N_ATOMS]
+            # figure how many atoms per aggregation element per row
+            max_n_atoms_per_group_tree_row = (
+                (self._model.max_input_to_aggregation_group **
+                 numpy.arange(1, atoms_per_row + 1)) *
+                self._n_fibres_per_ihcan_core)
 
-        self._n_group_tree_rows = max_n_atoms_per_group_tree_row.size
+            # filter rows max atoms so that its capped at 256
+            max_n_atoms_per_group_tree_row = \
+                max_n_atoms_per_group_tree_row[
+                    max_n_atoms_per_group_tree_row <= min(
+                        self._FINAL_ROW_N_ATOMS,
+                        self._n_channels * self._n_fibres_per_ihc)]
+
+            self._n_group_tree_rows = max_n_atoms_per_group_tree_row.size
         return atoms_per_row
 
     def _process_pole_freqs(self):
@@ -893,7 +901,7 @@ class SpiNNakEarApplicationVertex(
     def calculate_atoms_per_row(
             n_channels, n_fibres_per_ihc, n_fibres_per_ihcan,
             max_input_to_aggregation_group):
-        return int(numpy.ceil(math.log(
+        return math.ceil(numpy.ceil(math.log(
             (n_channels * n_fibres_per_ihc) / n_fibres_per_ihcan,
             max_input_to_aggregation_group)))
 

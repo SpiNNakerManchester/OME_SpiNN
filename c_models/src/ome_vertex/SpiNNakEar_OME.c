@@ -105,12 +105,15 @@ void _store_provenance_data(address_t provenance_region) {
     log_debug("writing other provenance data");
 
     // store the data into the provenance data region
-    provenance_region[B0] = stapes_hp_b[0];
-    provenance_region[B1] = stapes_hp_b[1];
-    provenance_region[B2] = stapes_hp_b[2];
-    provenance_region[A0] = stapes_hp_a[0];
-    provenance_region[A1] = stapes_hp_a[1];
-    provenance_region[A2] = stapes_hp_a[2];
+    filter_coeffs_struct *prov_struct =
+        (filter_coeffs_struct*) provenance_region;
+    prov_struct->shb1 = stapes_hp_b[0];
+    prov_struct->shb2 = stapes_hp_b[1];
+    prov_struct->shb3 = stapes_hp_b[2];
+    prov_struct->sha1 = stapes_hp_a[0];
+    prov_struct->sha2 = stapes_hp_a[1];
+    prov_struct->sha3 = stapes_hp_a[2];
+
 
     log_info("b0:%F", stapes_hp_b[0]);
     log_info("b1:%F", stapes_hp_b[1]);

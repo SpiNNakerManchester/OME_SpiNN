@@ -150,10 +150,10 @@ void data_write(uint arg_1, uint arg_2)
         dtcm_buffer_out = dtcm_buffer_y;
     }
 
-    for (uint32_t i = 0; i < parameters.seq_size; i++){
-        log_info("dtcm output buffer %d has %F",
-        i + (time * parameters.seq_size),
-        dtcm_buffer_out[i]);
+    for (int i = 0; i < parameters.seq_size; i++){
+        log_info(
+            "dtcm output buffer %d has %F",
+            i + (time * parameters.seq_size), dtcm_buffer_out[i]);
     }
 
     spin1_dma_transfer(

@@ -198,6 +198,8 @@ class SpiNNakEar(AbstractPyNNModel):
         atoms_per_row = SpiNNakEarApplicationVertex.calculate_atoms_per_row(
             n_channels, self._n_fibres_per_ihc, n_fibres_per_ihcan_core,
             self._max_input_to_aggregation_group)
+        if atoms_per_row == 0:
+            atoms_per_row = n_fibres_per_ihcan_core
 
         # figure out atoms
         atoms, _, _ = \

@@ -264,10 +264,10 @@ void process_chan(double *in_buffer) {
 
             //invert Ca
             float pos_ca_curr = -1.0f * ca_curr[j];
+            float ca_curr_pow = pos_ca_curr * dt_params.z;
             if (i % parameters.resampling_factor == 0) {
 
                 //=====Vesicle Release Rate MAP_BS=====//
-                float ca_curr_pow = pos_ca_curr * dt_params.z;
                 for (float k = 0.0; k < POWER - 1; k++) {
                     ca_curr_pow *= pos_ca_curr * dt_params.z;
                 }
@@ -363,12 +363,11 @@ void process_chan(double *in_buffer) {
                 if (spiked) {
                     neuron_recording_set_spike((j * parameters.seg_size) + i);
                 }
-
-                neuron_recording_set_float_recorded_param(
-                    SPIKE_PROBABILITY_REGION_ID, (j * parameters.seg_size) + i,
-                    ca_curr_pow);
-                 log_info(" ca curr pow = %f", ca_curr_pow);
-             }
+            }
+        neuron_recording_set_float_recorded_param(
+        SPIKE_PROBABILITY_REGION_ID, (j * parameters.seg_size) + i,
+            ca_curr_pow);
+        log_info(" ca curr pow = %f", ca_curr_pow);
         }
     }
 	// set off the record to sdram
@@ -571,10 +570,6 @@ bool app_init(uint32_t *timer_period)
         data_specification_get_region(RANDOM_SEEDS, data_address),
         sizeof(mars_kiss64_seed_t));
     validate_mars_kiss64_seed(local_seed);
-    //local_seed[0] = 0;
-    //local_seed[1] = 0;
-    //local_seed[2] = 0;
-    //local_seed[3] = 1;
 
 	//initialise cilia
 	cilia_filter_b2 = (double) dt_params.dt / CILIA_TC - 1.0;

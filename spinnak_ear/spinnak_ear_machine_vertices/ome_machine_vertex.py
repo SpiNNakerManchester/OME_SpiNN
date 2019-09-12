@@ -153,7 +153,7 @@ class OMEMachineVertex(
     @property
     @overrides(ProvidesProvenanceDataFromMachineImpl._n_additional_data_items)
     def _n_additional_data_items(self):
-        return self.EXTRA_PROVENANCE_DATA_ENTRIES.N_PROVENANCE_ELEMENTS.value
+        return self.EXTRA_PROVENANCE_DATA_ENTRIES.N_PROVENANCE_ELEMENTS.value *2
 
     @overrides(ProvidesProvenanceDataFromMachineImpl.
                get_provenance_data_from_machine)
@@ -163,13 +163,15 @@ class OMEMachineVertex(
             provenance_data, placement)
         provenance_data = self._get_remaining_provenance_data_items(
             provenance_data)
-
-        b0 = provenance_data[self.EXTRA_PROVENANCE_DATA_ENTRIES.B0.value]
-        b1 = provenance_data[self.EXTRA_PROVENANCE_DATA_ENTRIES.B1.value]
-        b2 = provenance_data[self.EXTRA_PROVENANCE_DATA_ENTRIES.B2.value]
-        a0 = provenance_data[self.EXTRA_PROVENANCE_DATA_ENTRIES.A0.value]
-        a1 = provenance_data[self.EXTRA_PROVENANCE_DATA_ENTRIES. A1.value]
-        a2 = provenance_data[self.EXTRA_PROVENANCE_DATA_ENTRIES.A2.value]
+        byte_level = numpy.asarray(
+            provenance_data, dtype="uint32").view(dtype="uint8")
+        double_level = byte_level.view(dtype=numpy.float64)
+        b0 = double_level[self.EXTRA_PROVENANCE_DATA_ENTRIES.B0.value]
+        b1 = double_level[self.EXTRA_PROVENANCE_DATA_ENTRIES.B1.value]
+        b2 = double_level[self.EXTRA_PROVENANCE_DATA_ENTRIES.B2.value]
+        a0 = double_level[self.EXTRA_PROVENANCE_DATA_ENTRIES.A0.value]
+        a1 = double_level[self.EXTRA_PROVENANCE_DATA_ENTRIES. A1.value]
+        a2 = double_level[self.EXTRA_PROVENANCE_DATA_ENTRIES.A2.value]
 
         label, x, y, p, names = self._get_placement_details(placement)
 

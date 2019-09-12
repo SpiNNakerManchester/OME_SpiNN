@@ -211,8 +211,8 @@ class IHCANMachineVertex(
     # the number of elements in the seeds
     N_SEEDS_PER_IHCAN_VERTEX = 4
 
-    # unknown what this magic number is
-    MAGIC_1 = 1000.0
+    # max recip value
+    R_MAX_RECIP = (1.0 / (0xffffffff + 1.0))
 
     # IHCAN partition id
     IHCAN_PARTITION_ID = "IHCANData"
@@ -488,7 +488,6 @@ class IHCANMachineVertex(
         # Write the routing key
         key = routing_info.get_first_key_from_pre_vertex(
             self, self.IHCAN_PARTITION_ID)
-        print("A")
         spec.write_value(key)
 
     def _fill_in_cilia_parameter_region(self, spec):
@@ -523,7 +522,7 @@ class IHCANMachineVertex(
         spec.write_value(self.CA_CURR_LSR, DataType.FLOAT_32)
         spec.write_value(self.CA_CURR_MSR, DataType.FLOAT_32)
         spec.write_value(self.CA_CURR_HSR, DataType.FLOAT_32)
-        spec.write_value((1.0 / (0xffffffff + 1.0)), DataType.FLOAT_32)
+        spec.write_value(self.R_MAX_RECIP, DataType.FLOAT_32)
 
     def _fill_in_dt_param_region(self, spec):
         """ writes the dt based constants
