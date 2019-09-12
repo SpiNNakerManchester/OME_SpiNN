@@ -21,16 +21,16 @@
 #include "spin1_api.h"
 
 //! \brief
-#define RECIP_BETA 1.0 / 400.0
+#define RECIP_BETA 1.0 / 400.0f
 
 //! \brief
 #define GAMMA 100.0f
 
 //! \brief
-#define ECA 0.066
+#define ECA 0.066f
 
-//! \brief
-#define POWER 3.0f
+//! \brief power -1 for genering cubed powers (for effeicey sake)
+#define POWER 2.0f
 
 //!*********************************** cilia constants *************//
 
@@ -73,13 +73,13 @@
 #define HAIR_CELL_CAPACITANCE 5e-12f
 
 //! \brief the maximum calcium conductance for a channel in the model
-#define GMAXCA 20e-9
-
-//! \brief calcium channel time constant for low hair cells
-#define TAU_CA_HSR 1.0 / 500e-6
+#define GMAXCA 20e-9f
 
 //! \brief the maximum number of neurotransmitters possible at a synapse
 #define MAXIMUM_NUM_NEUROTRANSMITTERS_AT_SYNAPSE 4.0f
+
+//! \brief calcium channel time constant for low hair cells
+#define TAU_CA_HSR 1.0 / 500e-6
 
 //! \brief calcium channel time constant for medium hair cells
 #define TAU_CA_MSR 1.0 / 350e-6
@@ -105,7 +105,7 @@
 #define SYNAPSE_CLEFT_RATE_TO_RE_UP_TAKE_STORE 300.0f
 
 //! \brief  refractory period for ihc in seconds
-#define IHC_REFRACTORY_PERIOD 7.5e-4
+#define IHC_REFRACTORY_PERIOD 7.5e-4f
 
 //! *********************** random named constants *****************//
 

@@ -218,7 +218,7 @@ void data_read(uint mc_key, uint payload) {
 void process_chan(double *in_buffer) {
 
     for (int i = 0; i < parameters.seg_size; i++) {
-        log_info("in buffer %d is %f", i, in_buffer[i]);
+        log_debug("in buffer %d is %f", i, in_buffer[i]);
     }
 
 	for (int i = 0; i < parameters.seg_size; i++) {
@@ -227,6 +227,9 @@ void process_chan(double *in_buffer) {
             CILIA_FILTER_B1 * in_buffer[i] + cilia_filter_b2 * past_cilia_disp);
 
         double cilia_disp = filter_1 - cilia_filter_a1 * past_cilia_disp;
+        log_debug(
+            "cilia_disp %d is %f",
+            ((seg_index-1)*parameters.seg_size)+i, cilia_disp);
         past_cilia_disp = cilia_disp * CILIA_C;
 
         //===========Apply Scaler============//
@@ -249,11 +252,16 @@ void process_chan(double *in_buffer) {
 
         //================ICa================//
         float mica_pow_conv = m_ica_curr;
-        for (float k = 0; k < POWER - 1; k++) {
+        for (float k = 0; k < POWER; k++) {
             mica_pow_conv *= m_ica_curr;
         }
+        log_debug(
+            "mica_pow_conv %d is %f",
+            ((seg_index-1)*parameters.seg_size) + i,
+            mica_pow_conv);
 
         //============Fibres=============//
+        float ca_curr_pow;
         for (int j = 0; j < parameters.number_fibres; j++) {
 
             //======Synaptic Ca========//
@@ -262,13 +270,31 @@ void process_chan(double *in_buffer) {
             float sub2 = (ca_curr[j] * dt_params.dt) * rec_tau_ca[j];
             ca_curr[j] += sub1 - sub2;
 
+            log_debug(
+                "sub1 %d is %f",
+                ((seg_index-1)*parameters.seg_size) + i, sub1);
+
+            log_debug(
+                "sub2 %d is %f",
+                ((seg_index-1)*parameters.seg_size) + i, sub2);
+
+            log_debug(
+                "i_ca %d is %f",
+                ((seg_index-1)*parameters.seg_size) + i,
+                i_ca);
+
             //invert Ca
             float pos_ca_curr = -1.0f * ca_curr[j];
-            float ca_curr_pow = pos_ca_curr * dt_params.z;
+            log_debug(
+                "pos_ca_curr %d is %f",
+                ((seg_index-1)*parameters.seg_size) + i,
+                pos_ca_curr);
+
             if (i % parameters.resampling_factor == 0) {
 
+                ca_curr_pow = pos_ca_curr * dt_params.z;
                 //=====Vesicle Release Rate MAP_BS=====//
-                for (float k = 0.0; k < POWER - 1; k++) {
+                for (float k = 0.0; k < POWER; k++) {
                     ca_curr_pow *= pos_ca_curr * dt_params.z;
                 }
 
@@ -365,9 +391,11 @@ void process_chan(double *in_buffer) {
                 }
             }
         neuron_recording_set_float_recorded_param(
-        SPIKE_PROBABILITY_REGION_ID, (j * parameters.seg_size) + i,
+            SPIKE_PROBABILITY_REGION_ID,
+            (j * parameters.seg_size) + i,
             ca_curr_pow);
-        log_info(" ca curr pow = %f", ca_curr_pow);
+        log_info(" ca curr pow for fiber %d index %d= %f",
+         j, ((seg_index-1)*parameters.seg_size)+i, ca_curr_pow);
         }
     }
 	// set off the record to sdram
@@ -478,21 +506,28 @@ bool app_init(uint32_t *timer_period)
         data_specification_get_region(INNER_EAR_PARAMS, data_address),
         sizeof(inner_ear_param_struct));
 
+    log_debug(
+        " ca_curr_lsr = %f,  ca_curr_msr = %f,  ca_curr_hsr = %f;",
+        inner_ear_params.ca_curr_lsr, inner_ear_params.ca_curr_msr,
+        inner_ear_params.ca_curr_hsr);
+
     // get dt params
     spin1_memcpy(
         &dt_params,
         data_specification_get_region(DT_BASED_PARAMS, data_address),
         sizeof(dt_params_struct));
 
+    log_debug(" dt is %f", dt_params.dt);
+
     // set the current ihcv to the start point
     ihcv_now = inner_ear_params.ihcv;
     m_ica_curr = inner_ear_params.m_ica_curr;
 
     // factor to perform vesicle model resampling by
-    log_info("AN key=%d", parameters.my_key);
-    log_info("n_lsr=%d", parameters.num_lsr);
-    log_info("n_msr=%d", parameters.num_msr);
-    log_info("n_hsr=%d", parameters.num_hsr);
+    log_debug("AN key=%d", parameters.my_key);
+    log_debug("n_lsr=%d", parameters.num_lsr);
+    log_debug("n_msr=%d", parameters.num_msr);
+    log_debug("n_hsr=%d", parameters.num_hsr);
 
     #ifdef PROFILE
         // configure timer 2 for profiling

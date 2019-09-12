@@ -183,6 +183,8 @@ uint process_chan(double *out_buffer, float *in_buffer) {
         double linout1 =
             filter_1 - filter_params.la1 * lin_y1[1] -
             filter_params.la2 * lin_y1[0];
+        log_debug(
+            "linout1 %d, %F", ((seg_index-1)*parameters.seq_size)+i, linout1);
 
 		lin_x1 = in_buffer[i];
 		lin_y1[0] = lin_y1[1];
@@ -194,6 +196,9 @@ uint process_chan(double *out_buffer, float *in_buffer) {
         double linout2 =
             filter_1 - filter_params.la1 * lin_y2[1] -
             filter_params.la2 * lin_y2[0];
+
+        log_debug(
+            "linout2 %d, %F", ((seg_index-1)*parameters.seq_size)+i, linout2);
 
 		lin_y2[0] = lin_y2[1];
 		lin_y2[1] = linout2;
@@ -207,6 +212,10 @@ uint process_chan(double *out_buffer, float *in_buffer) {
             filter_1 - filter_params.nla1 * nlin_y1a[1] -
             filter_params.nla2 * nlin_y1a[0];
 
+        log_info(
+            "none lineout1a %d, %F",
+            ((seg_index-1)*parameters.seq_size)+i, nonlinout1a);
+
 		nlin_x1a = in_buffer[i];
 		nlin_y1a[0] = nlin_y1a[1];
 		nlin_y1a[1] = nonlinout1a;
@@ -217,6 +226,10 @@ uint process_chan(double *out_buffer, float *in_buffer) {
         double non_linout_2a =
             filter_1 - filter_params.nla1 * nlin_y2a[1] -
             filter_params.nla2 * nlin_y2a[0];
+
+        log_info(
+            "none lineout2a %d, %F",
+            ((seg_index-1)*parameters.seq_size)+i, non_linout_2a);
 
 		nlin_y2a[0] = nlin_y2a[1];
 		nlin_y2a[1] = non_linout_2a;
