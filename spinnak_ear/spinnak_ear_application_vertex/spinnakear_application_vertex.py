@@ -1050,12 +1050,23 @@ class SpiNNakEarApplicationVertex(
                 DRNLMachineVertex.MOC_RECORDABLE_REGION_ID, placements,
                 graph_mapper, self, variable, run_time, local_time_period_map)
         elif variable == IHCANMachineVertex.SPIKE_PROB:
-            return self._ihcan_neuron_recorder.get_matrix_data(
+            matrix_data = self._ihcan_neuron_recorder.get_matrix_data(
                 self._label, buffer_manager,
                 IHCANMachineVertex.RECORDING_REGIONS.
                 SPIKE_PROBABILITY_REGION_ID.value,
                 placements, graph_mapper, self, variable, run_time,
                 local_time_period_map)
+
+            # convert to n fibers per time step.
+            new_matrix_data = list()
+            for element in matrix_data[0]:
+                seq_elements = list()
+                for seq_index in range(0, self._model.seq_size):
+                    seq_elements.append(
+                        element[0 + seq_index:: self._model.seq_size])
+                for time_step in seq_elements:
+                    new_matrix_data.append(time_step)
+            return new_matrix_data, matrix_data[1][0:10], matrix_data[2]
         elif variable == IHCANMachineVertex.SPIKES:
             return self._ihcan_neuron_recorder.get_spikes(
                 self._label, buffer_manager,

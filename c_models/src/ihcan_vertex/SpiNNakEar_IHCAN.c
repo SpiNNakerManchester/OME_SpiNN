@@ -221,6 +221,8 @@ void process_chan(double *in_buffer) {
         log_debug("in buffer %d is %f", i, in_buffer[i]);
     }
 
+    log_info("prcess channel for time %d", seg_index);
+
 	for (int i = 0; i < parameters.seg_size; i++) {
         //==========cilia_params filter===============//
         double filter_1 = (
@@ -399,8 +401,8 @@ void process_chan(double *in_buffer) {
         }
     }
 	// set off the record to sdram
-	neuron_recording_matrix_record(time);
-	neuron_recording_spike_record(time, SPIKE_RECORDING_REGION_ID);
+	neuron_recording_matrix_record(seg_index);
+	neuron_recording_spike_record(seg_index, SPIKE_RECORDING_REGION_ID);
 }
 
 //! \brief interface for when dma transfer is successful
