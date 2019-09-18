@@ -263,7 +263,7 @@ void process_chan(double *in_buffer) {
             mica_pow_conv);
 
         //============Fibres=============//
-        float ca_curr_pow;
+        float ca_curr_pow = 0.0;
         for (int j = 0; j < parameters.number_fibres; j++) {
 
             //======Synaptic Ca========//

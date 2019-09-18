@@ -37,6 +37,13 @@ class ANGroupMachineVertex(
     """ A vertex that runs the multi-cast acknowledge algorithm
     """
 
+    __slots__ = [
+        "_n_atoms",
+        "_n_children",
+        "_is_final_row",
+        "_connection_slice"
+    ]
+
     # provenance items
     EXTRA_PROVENANCE_DATA_ENTRIES = Enum(
         value="EXTRA_PROVENANCE_DATA_ENTRIES",
@@ -62,29 +69,32 @@ class ANGroupMachineVertex(
                ('PROVENANCE', 3)])
 
     def __init__(
-            self, n_atoms, n_children, is_final_row, final_row_lo_atom, row,
-            ear_index):
+            self, n_atoms, n_children, is_final_row, row,
+            ear_index, connection_slice):
         """
         """
-        MachineVertex.__init__(
-            self,
-            label=(
+        if is_final_row:
+            label = (
                 "AN Group Node for ear {} with lo atom {} and is {} for "
                 "final row in row {}".format(
-                    ear_index, final_row_lo_atom, is_final_row, row)),
-            constraints=None)
+                    ear_index, connection_slice.lo_atom, is_final_row, row))
+        else:
+            label = "AN Group Node for ear {} and is in row {}".format(
+                ear_index, row)
+
+        MachineVertex.__init__(self, label=label, constraints=None)
         self._n_atoms = n_atoms
         self._n_children = n_children
         self._is_final_row = is_final_row
-        self._low_atom = final_row_lo_atom
+        self._connection_slice = connection_slice
 
     @property
     def is_final_row(self):
         return self._is_final_row
 
     @property
-    def low_atom(self):
-        return self._low_atom
+    def connection_slice(self):
+        return self._connection_slice
 
     @property
     @overrides(MachineVertex.resources_required)

@@ -419,14 +419,16 @@ class SpiNNakEarApplicationVertex(
             self.FULL_EAR_HAIR_FIBERS * float(self._model.scale) /
             self._model.n_fibres_per_ihc) * self._model.n_fibres_per_ihc)
 
+    @overrides(AbstractControlsSourceOfEdges.get_out_going_slices)
     def get_out_going_slices(self):
         slices = list()
         starter = 0
-        for _ in self._final_agg_vertices:
-            slices.append(Slice(starter, starter))
-            starter += 1
+        for agg_vertex in self._final_agg_vertices:
+            slices.append(agg_vertex.connection_slice)
+            starter += agg_vertex.n_atoms
         return slices
 
+    @overrides(AbstractControlsDestinationOfEdges.get_in_coming_slices)
     def get_in_coming_slices(self):
         slices = list()
         starter = 0
@@ -439,7 +441,7 @@ class SpiNNakEarApplicationVertex(
     def get_pre_slice_for(self, machine_vertex):
         if isinstance(machine_vertex, ANGroupMachineVertex):
             if machine_vertex.is_final_row:
-                return Slice(machine_vertex.low_atom, machine_vertex.low_atom)
+                return machine_vertex.connection_slice
         raise Exception(self.PRE_SLICE_ERROR)
 
     @overrides(AbstractControlsDestinationOfEdges.get_post_slice_for)
@@ -799,12 +801,22 @@ class SpiNNakEarApplicationVertex(
 
                 # build vert
                 final_row = row == self._n_group_tree_rows - 1
+
+                final_row_slice = None
+                if final_row:
+                    final_row_slice = Slice(
+                        final_row_lo_atom, final_row_lo_atom + n_atoms)
+                    final_row_lo_atom += n_atoms
+
                 ag_vertex = ANGroupMachineVertex(
-                    n_atoms, len(child_verts), final_row, final_row_lo_atom,
-                    row, self._model.ear_index)
+                    n_atoms, len(child_verts), final_row, row,
+                    self._model.ear_index, final_row_slice)
+
+                # only store it in the agg array if its in the final row
                 if final_row:
                     self._final_agg_vertices.append(ag_vertex)
-                    final_row_lo_atom += 1
+
+                # store for the next cycle
                 aggregation_verts.append(ag_vertex)
 
                 # update stuff

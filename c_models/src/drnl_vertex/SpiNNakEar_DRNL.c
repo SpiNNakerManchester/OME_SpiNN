@@ -80,8 +80,6 @@ double nlin_x1b;
 double nlin_y1b[2];
 double nlin_y2b[2];
 
-uint rx_any_spikes = 0;
-
 // the buffers
 float *dtcm_buffer_a;
 float *dtcm_buffer_b;
@@ -132,12 +130,12 @@ void neuron_add_inputs(
 void data_write(uint arg_1, uint arg_2)
 {
 	if (arg_1 == 0 && arg_2 == 0){
-	    log_info("synaptic dma read");
+	    log_debug("synaptic dma read");
 	    setup_synaptic_dma_read();
 	    return;
 	}
 
-    log_info("ear dma read");
+    log_debug("ear dma read");
 	double *dtcm_buffer_out;
 	uint out_index;
 
@@ -151,7 +149,7 @@ void data_write(uint arg_1, uint arg_2)
     }
 
     for (int i = 0; i < parameters.seq_size; i++){
-        log_info(
+        log_debug(
             "dtcm output buffer %d has %F",
             i + (time * parameters.seq_size), dtcm_buffer_out[i]);
     }
@@ -212,7 +210,7 @@ uint process_chan(double *out_buffer, float *in_buffer) {
             filter_1 - filter_params.nla1 * nlin_y1a[1] -
             filter_params.nla2 * nlin_y1a[0];
 
-        log_info(
+        log_debug(
             "none lineout1a %d, %F",
             ((seg_index-1)*parameters.seq_size)+i, nonlinout1a);
 
@@ -227,7 +225,7 @@ uint process_chan(double *out_buffer, float *in_buffer) {
             filter_1 - filter_params.nla1 * nlin_y2a[1] -
             filter_params.nla2 * nlin_y2a[0];
 
-        log_info(
+        log_debug(
             "none lineout2a %d, %F",
             ((seg_index-1)*parameters.seq_size)+i, non_linout_2a);
 
@@ -297,7 +295,7 @@ uint process_chan(double *out_buffer, float *in_buffer) {
 		    MOC_RECORDING_REGION, 0, moc);
 		neuron_recording_matrix_record(overall_sample_id);
         neuron_recording_do_timestep_update(overall_sample_id);
-        log_info("overall sample id is %d", overall_sample_id);
+        log_debug("overall sample id is %d", overall_sample_id);
         overall_sample_id += 1;
 	}
 	return segment_offset;
@@ -340,7 +338,7 @@ void write_complete(uint tid, uint ttag) {
     #endif
 
     //send MC packet to connected IHC/AN models
-    log_info("sending packet to ihcans");
+    log_debug("sending packet to ihcans");
     while (!spin1_send_mc_packet(
             parameters.key, DRNL_FILLER_ARG, NO_PAYLOAD)) {
         spin1_delay_us(1);
@@ -370,7 +368,7 @@ void data_read(uint mc_key, uint payload) {
         //assign receive buffer
         if (!read_switch) {
             dtcm_buffer_a[mc_seg_idx-1] = MC_union.f;
-            log_info(
+            log_debug(
                 "dtcm buffer a %d is %f",
                 mc_seg_idx-1, dtcm_buffer_a[mc_seg_idx-1]);
 
@@ -386,7 +384,7 @@ void data_read(uint mc_key, uint payload) {
         else {
             dtcm_buffer_b[mc_seg_idx-1] = MC_union.f;
 
-            log_info(
+            log_debug(
                 "dtcm buffer b %d is %f",
                 mc_seg_idx-1, dtcm_buffer_b[mc_seg_idx-1]);
 
@@ -423,6 +421,9 @@ void count_ticks(uint null_a, uint null_b) {
     if (infinite_run != TRUE && time >= simulation_ticks) {
 
         // handle the pause and resume functionality
+        log_info(
+            "received %d mc packets",
+            spike_processing_get_spike_processing_count());
         neuron_recording_finalise();
         simulation_handle_pause_resume(NULL);
 
