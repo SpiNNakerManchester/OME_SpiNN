@@ -77,7 +77,7 @@ typedef enum synapse_type_indices {
      _a > _b ? _a : _b; })
 
 // absolute value
-#define absolute_value(x) (((x)<0) ? -(x) : (x))
+#define absolute_value(x) (((x) < 0) ? -(x) : (x))
 
 // which sign it is
 #define find_sign(x) (((x)<0) ? -(1.0) : (1.0))

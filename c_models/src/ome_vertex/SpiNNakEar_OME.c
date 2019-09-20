@@ -198,10 +198,6 @@ void process_chan(REAL *in_buffer) {
 	REAL sub;
 
 	for (int i = 0; i < parameters.seg_size; i++){
-	    log_info("in buffer %d is %F", i, in_buffer[i]);
-	}
-
-	for (int i = 0; i < parameters.seg_size; i++){
 		// concha
         filter_1 = (
             concha_filter_b[0] * in_buffer[i] + concha_filter_b[1]
@@ -366,13 +362,13 @@ bool app_init(uint32_t *timer_period)
         data_specification_get_region(CONCHA_PARAMS, data_address),
         sizeof(concha_params_struct));
 
-    log_info(
+    log_debug(
         "concha gain scalar = %k, ear canal gain scalar = %k",
         (accum) concha_params.concha_gain_scalar,
         (accum) concha_params.ear_canal_gain_scalar);
 
 
-    log_info(
+    log_debug(
         "concha gain scalar = %F, ear canal gain scalar = %F",
         concha_params.concha_gain_scalar, concha_params.ear_canal_gain_scalar);
 
@@ -381,7 +377,7 @@ bool app_init(uint32_t *timer_period)
     REAL concha_q = m_pi * parameters.dt * (REAL)(CONCHA_H - CONCHA_1);
     REAL concha_j = 1.0 / (1.0 + (1.0 / tan(concha_q)));
 
-    log_info("concha_j %k", (accum) concha_j);
+    log_debug("concha_j %k", (accum) concha_j);
 
     log_debug(" concha Q %F", concha_q);
     log_debug("pi is %F", m_pi);
@@ -398,15 +394,16 @@ bool app_init(uint32_t *timer_period)
     concha_filter_a[1] = -1.0 * concha_k;
     concha_filter_a[2] = -1.0 * concha_l;
 
-    log_info(
+    log_debug(
         "filter b0 %F, b1 %F, b2 %F, a0 %F, a1 %F, a2 %F",
         concha_filter_b[0], concha_filter_b[1], concha_filter_b[2],
         concha_filter_a[0], concha_filter_a[1], concha_filter_a[2]);
 
-    log_info(
+    log_debug(
         "filter b0 %k, b1 %k, b2 %k, a0 %k, a1 %k, a2 %k",
-        (accum)concha_filter_b[0], (accum)concha_filter_b[1], (accum)concha_filter_b[2],
-        (accum)concha_filter_a[0], (accum)concha_filter_a[1], (accum)concha_filter_a[2]);
+        (accum)concha_filter_b[0], (accum)concha_filter_b[1],
+        (accum)concha_filter_b[2], (accum)concha_filter_a[0],
+        (accum)concha_filter_a[1], (accum)concha_filter_a[2]);
 
     REAL ear_canal_q = m_pi * parameters.dt * (EAR_CANAL_H - EAR_CANAL_L);
     REAL ear_canal_j = 1.0 / (1.0 + (1.0 / tan(ear_canal_q)));
@@ -436,7 +433,7 @@ bool app_init(uint32_t *timer_period)
     stapes_hp_a[1] = filter_coeffs.sha2;
     stapes_hp_a[2] = filter_coeffs.sha3;
 
-    log_info(
+    log_debug(
         "shb1 %F, shb2 %F shb3 %F, sha1 %F, sha2 %F sha3 %F",
         stapes_hp_b[0], stapes_hp_b[1], stapes_hp_b[2], stapes_hp_a[0],
         stapes_hp_a[1], stapes_hp_a[2]);
@@ -469,7 +466,7 @@ bool app_init(uint32_t *timer_period)
     #endif
 
     // successful init
-    log_info("init complete");
+    log_debug("init complete");
     return true;
 }
 

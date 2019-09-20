@@ -115,12 +115,18 @@ void neuron_add_inputs(
         index_t synapse_type_index, index_t neuron_index,
         input_t weights_this_timestep) {
     use(neuron_index);
+    log_debug(
+        "new moc weight is %d in synapse type %d for neuron %d",
+        weights_this_timestep, synapse_type_index, neuron_index);
+
+
     if (synapse_type_index == EXCITATORY){
         moc_spike_weight += weights_this_timestep;
     }
     else if (synapse_type_index == INHIBITORY) {
         moc_spike_weight -= weights_this_timestep;
     }
+    log_debug("new moc weight is %F", moc_spike_weight);
 }
 
 //! \brief write data to sdram edge
@@ -233,13 +239,17 @@ uint process_chan(double *out_buffer, float *in_buffer) {
 		nlin_y2a[1] = non_linout_2a;
 
 		//MOC efferent effects
+		log_debug("moc now 1 is %F" , moc_now_1);
         moc_now_1 = moc_now_1 * moc_dec_1 + moc_spike_weight * moc_factor_1;
         moc_now_2 = moc_now_2 * moc_dec_2 + moc_spike_weight * moc_factor_2;
         moc_now_3 = moc_now_3 * moc_dec_3 + moc_spike_weight * moc_factor_3;
-        log_debug(
-            " moc 1 %F moc 2 %F moc 3 %F ", moc_now_1, moc_now_2, moc_now_3);
+        log_debug("moc 1 %F ", moc_now_1);
 
-        moc = 1.0 / (1 + moc_now_1 + moc_now_2 + moc_now_3);
+        log_debug(
+            "moc demonimator is %F",
+            1.0 + moc_now_1 + moc_now_2 + moc_now_3);
+        moc = 1.0 / (1.0 + moc_now_1 + moc_now_2 + moc_now_3);
+        log_debug("moc %F ", moc);
 
         if (moc > 1.0) {
             log_error("out of bounds moc_n%d", moc);
@@ -251,10 +261,13 @@ uint process_chan(double *out_buffer, float *in_buffer) {
 
 		// original moc att location (robert wants to keep this for future
 		// students)
-		//non_linout_2a *= moc;
+		non_linout_2a *= moc;
 
 		//stage 2
 		double abs_x = absolute_value(non_linout_2a);
+		log_debug(
+		    "abs of non_linout_2a is %F, disp_thresh is %F",
+		    abs_x,  double_params.disp_thresh);
         double compressed_non_lin = 0.0;
 		if (abs_x < double_params.disp_thresh) {
 			compressed_non_lin = A * non_linout_2a;
@@ -264,6 +277,7 @@ uint process_chan(double *out_buffer, float *in_buffer) {
 			    find_sign(non_linout_2a) * double_params.ctbm * (double) expk(
 			        C * logk((accum)(A * (abs_x * double_params.receip_ctbm))));
 		}
+		log_debug("compressed non lin is %F", compressed_non_lin);
 
 		//stage 3
         filter_1 =
@@ -274,6 +288,7 @@ uint process_chan(double *out_buffer, float *in_buffer) {
             filter_params.nla2 * nlin_y1b[0];
 
 		nlin_x1b = compressed_non_lin;
+		log_debug(" nlin_x1b is %F", nlin_x1b);
 		nlin_y1b[0] = nlin_y1b[1];
 		nlin_y1b[1] = non_linout_1b;
 
@@ -288,7 +303,7 @@ uint process_chan(double *out_buffer, float *in_buffer) {
 		nlin_y2b[1] = non_linout_2b;
 
 		// changed moc att to channel output
-		out_buffer[i] = (linout2 + non_linout_2b) * moc;
+		out_buffer[i] = linout2 + non_linout_2b;
 
         log_debug("recording for moc index %d the value %F", i, moc);
 		neuron_recording_set_double_recorded_param(
@@ -417,7 +432,7 @@ void count_ticks(uint null_a, uint null_b) {
     // set the weight from neurons back to 0. emulating a delta synapse.
     moc_spike_weight = 0;
 
-    log_info("time %d, sim ticks %d", time, simulation_ticks);
+    log_debug("time %d, sim ticks %d", time, simulation_ticks);
 
     // make the synapses set off the neuron add input method
     synapses_do_timestep_update(time);
@@ -426,9 +441,6 @@ void count_ticks(uint null_a, uint null_b) {
     if (infinite_run != TRUE && time >= simulation_ticks) {
 
         // handle the pause and resume functionality
-        log_info(
-            "received %d mc packets",
-            spike_processing_get_packet_received_count());
         neuron_recording_finalise();
         simulation_handle_pause_resume(NULL);
 
@@ -564,6 +576,7 @@ static inline bool app_init(uint32_t *timer_period) {
     moc_factor_1 = double_params.moc_factor_1;
     moc_factor_2 = 0.0;
     moc_factor_3 = 0.0;
+    log_info("moc factor 1 is %F", moc_factor_1);
 
     // Set up the synapses
     uint32_t *ring_buffer_to_input_buffer_left_shifts;
