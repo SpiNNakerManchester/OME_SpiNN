@@ -236,7 +236,7 @@ uint process_chan(double *out_buffer, float *in_buffer) {
         moc_now_1 = moc_now_1 * moc_dec_1 + moc_spike_weight * moc_factor_1;
         moc_now_2 = moc_now_2 * moc_dec_2 + moc_spike_weight * moc_factor_2;
         moc_now_3 = moc_now_3 * moc_dec_3 + moc_spike_weight * moc_factor_3;
-        log_info(
+        log_debug(
             " moc 1 %F moc 2 %F moc 3 %F ", moc_now_1, moc_now_2, moc_now_3);
 
         moc = 1.0 / (1 + moc_now_1 + moc_now_2 + moc_now_3);
@@ -290,7 +290,7 @@ uint process_chan(double *out_buffer, float *in_buffer) {
 		// changed moc att to channel output
 		out_buffer[i] = (linout2 + non_linout_2b) * moc;
 
-        log_info("recording for moc index %d the value %F", i, moc);
+        log_debug("recording for moc index %d the value %F", i, moc);
 		neuron_recording_set_double_recorded_param(
 		    MOC_RECORDING_REGION, 0, moc);
 		neuron_recording_matrix_record(overall_sample_id);
@@ -411,7 +411,12 @@ void count_ticks(uint null_a, uint null_b) {
     use(null_a);
     use(null_b);
 
+    // update time
     time++;
+
+    // set the weight from neurons back to 0. emulating a delta synapse.
+    moc_spike_weight = 0;
+
     log_info("time %d, sim ticks %d", time, simulation_ticks);
 
     // make the synapses set off the neuron add input method
@@ -423,7 +428,7 @@ void count_ticks(uint null_a, uint null_b) {
         // handle the pause and resume functionality
         log_info(
             "received %d mc packets",
-            spike_processing_get_spike_processing_count());
+            spike_processing_get_packet_received_count());
         neuron_recording_finalise();
         simulation_handle_pause_resume(NULL);
 
