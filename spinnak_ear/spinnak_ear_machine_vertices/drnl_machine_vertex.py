@@ -513,8 +513,8 @@ class DRNLMachineVertex(
 
         spec.write_value(
             math.exp(-(dt / self.MOC_TAU_0)), data_type=DataType.FLOAT_64)
-        # moc dec 2 & 3 are currently redundant as moc_factor_2 & 3 are 
-        # hard coded = 0 in c code - i.e. current version only uses moc 
+        # moc dec 2 & 3 are currently redundant as moc_factor_2 & 3 are
+        # hard coded = 0 in c code - i.e. current version only uses moc
         # dec 1 and moc_factor_1
 
         # moc dec 2
@@ -525,7 +525,7 @@ class DRNLMachineVertex(
         spec.write_value(
             math.exp(-(dt / self.MOC_TAU_2)), data_type=DataType.FLOAT_64)
 
-        # moc_factor_1 (scaled by 1/sim time step * ratio of drnl dt and 
+        # moc_factor_1 (scaled by 1/sim time step * ratio of drnl dt and
         # sim time step)
         spec.write_value(
             self.RATE_TO_ATTENTUATION_FACTOR * self.MOC_TAU_WEIGHT * dt,

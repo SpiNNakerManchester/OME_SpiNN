@@ -86,7 +86,7 @@ class OMEMachineVertex(
 
     CONCHA_G = 0.25
 
-
+    # dsg regions
     REGIONS = Enum(
         value="REGIONS",
         names=[('SYSTEM', 0),
@@ -153,7 +153,8 @@ class OMEMachineVertex(
     @property
     @overrides(ProvidesProvenanceDataFromMachineImpl._n_additional_data_items)
     def _n_additional_data_items(self):
-        return self.EXTRA_PROVENANCE_DATA_ENTRIES.N_PROVENANCE_ELEMENTS.value *2
+        return (
+            self.EXTRA_PROVENANCE_DATA_ENTRIES.N_PROVENANCE_ELEMENTS.value * 2)
 
     @overrides(ProvidesProvenanceDataFromMachineImpl.
                get_provenance_data_from_machine)
