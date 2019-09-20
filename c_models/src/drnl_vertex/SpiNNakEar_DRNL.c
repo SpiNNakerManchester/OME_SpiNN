@@ -239,7 +239,7 @@ uint process_chan(double *out_buffer, float *in_buffer) {
 		nlin_y2a[1] = non_linout_2a;
 
 		//MOC efferent effects
-		log_debug("moc now 1 is %F" , moc_now_1);
+		log_debug("moc now 1 is %F", moc_now_1);
         moc_now_1 = moc_now_1 * moc_dec_1 + moc_spike_weight * moc_factor_1;
         moc_now_2 = moc_now_2 * moc_dec_2 + moc_spike_weight * moc_factor_2;
         moc_now_3 = moc_now_3 * moc_dec_3 + moc_spike_weight * moc_factor_3;
