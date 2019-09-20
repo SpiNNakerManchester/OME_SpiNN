@@ -34,4 +34,3 @@ class SpiNNakEarMachineEdge(MachineEdge, AbstractFilterableEdge):
 
     def filter_edge(self, graph_mapper):
         return False
-
