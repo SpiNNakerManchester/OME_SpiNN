@@ -117,9 +117,8 @@ class DRNLMachineVertex(
     # recording regions
     RECORDING_REGIONS = Enum(
         value="RECORDING_REGIONS",
-        names=[("DRNL_SPIKES_RECORDING_REGION_ID", 0),
-               ("MOC_RECORDING_REGION_ID", 1),
-               ("N_RECORDING_REGIONS", 2)]
+        names=[("MOC_RECORDING_REGION_ID", 0),
+               ("N_RECORDING_REGIONS", 1)]
     )
 
     # matrix weight scale
@@ -139,26 +138,20 @@ class DRNLMachineVertex(
     MOC_BUFFER_SIZE = 10
 
     MOC = "moc"
-    DRNL_SPIKES = "spikes"
 
     # the params recordable from a drnl vertex
     # HACK!
     # the drnl spikes is there just for recording limitations. it can never
     # be set as the application vertex has hidden it from the end user
-    RECORDABLES = [DRNL_SPIKES, MOC]
+    RECORDABLES = [MOC]
 
     # recordable units NOTE RJ and ABS have no idea, but we're going with
     # meters for completeness on the MOC.
     RECORDABLE_UNITS = {
-        MOC: 'meters',
-        DRNL_SPIKES: 'spikes'}
+        MOC: 'meters'}
 
     # recording region id for the moc
-    MOC_RECORDABLE_REGION_ID = 1
-
-    # this should never be used, but is forced upon us due to all verts
-    # needing to record spikes.
-    DRNL_SPIKES_RECORDABLE_REGION_ID = 0
+    MOC_RECORDABLE_REGION_ID = 0
 
     # regions
     REGIONS = Enum(

@@ -51,7 +51,7 @@ typedef enum synapse_type_indices {
 } synapse_type_indices;
 
 // recording region
-#define MOC_RECORDING_REGION 1
+#define MOC_RECORDING_REGION 0
 
 // how many neurons are in a drnl vertex
 #define N_NEURONS 1

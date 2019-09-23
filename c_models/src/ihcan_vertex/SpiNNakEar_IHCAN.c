@@ -389,7 +389,9 @@ void process_chan(double *in_buffer) {
 
                 //=======write output value to buffer to go to SDRAM ========//
                 if (spiked) {
-                    neuron_recording_set_spike((j * parameters.seg_size) + i);
+                    neuron_recording_set_spike(
+                        SPIKE_RECORDING_REGION_ID,
+                        (j * parameters.seg_size) + i);
                 }
             }
             neuron_recording_set_float_recorded_param(
@@ -402,8 +404,7 @@ void process_chan(double *in_buffer) {
         }
     }
 	// set off the record to sdram
-	neuron_recording_matrix_record(seg_index);
-	neuron_recording_spike_record(seg_index, SPIKE_RECORDING_REGION_ID);
+	neuron_recording_record(seg_index);
 }
 
 //! \brief interface for when dma transfer is successful

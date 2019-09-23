@@ -4,8 +4,7 @@ SOURCE_DIRS := src/
 SOURCE_DIRS += $(abspath $(NEURAL_MODELLING_DIRS)/src)
 
 SOURCES = ihcan_vertex/SpiNNakEar_IHCAN.c \
-          neuron/neuron_recording.c \
-          common/out_spikes.c
+          neuron/neuron_recording.c
 
 CFLAGS += -DSPINNAKER
 
