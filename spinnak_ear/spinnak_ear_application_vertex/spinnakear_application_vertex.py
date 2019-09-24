@@ -295,17 +295,16 @@ class SpiNNakEarApplicationVertex(
 
     @overrides(AbstractNeuronRecordable.get_expected_n_rows)
     def get_expected_n_rows(
-            self, run_time, local_time_period_map, sampling_rate, vertex,
-            variable):
+            self, current_run_timesteps_map, sampling_rate, vertex, variable):
         if isinstance(vertex, DRNLMachineVertex):
             return int(
                 (self._drnl_neuron_recorder.expected_rows_for_a_run_time(
-                    run_time, local_time_period_map, vertex, sampling_rate))
+                    current_run_timesteps_map, vertex, sampling_rate))
                 * self._model.seq_size)
         else:
             return int(
                 self._ihcan_neuron_recorder.expected_rows_for_a_run_time(
-                    run_time, local_time_period_map, vertex, sampling_rate))
+                    current_run_timesteps_map, vertex, sampling_rate))
 
     @staticmethod
     def fibres_per_ihcan_core(sample_time, n_fibres_per_ihc):
