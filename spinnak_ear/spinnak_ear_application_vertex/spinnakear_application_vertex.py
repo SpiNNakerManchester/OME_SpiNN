@@ -34,6 +34,7 @@ from spinn_front_end_common.utilities import globals_variables
 from spinn_front_end_common.utilities.constants import \
     MICRO_TO_SECOND_CONVERSION
 from spinn_front_end_common.utilities.exceptions import ConfigurationException
+from spinn_front_end_common.utilities.globals_variables import get_simulator
 
 from spynnaker.pyNN.models.abstract_models import AbstractContainsUnits, \
     AbstractPopulationSettable
@@ -948,6 +949,10 @@ class SpiNNakEarApplicationVertex(
     @overrides(AbstractSpikeRecordable.get_spikes_sampling_interval)
     def get_spikes_sampling_interval(
             self, graph_mapper, local_time_period_map):
+        if graph_mapper is None or local_time_period_map is None:
+            return self.my_variable_local_time_period(
+                get_simulator().default_machine_time_step,
+                IHCANMachineVertex.SPIKES)
         return self._ihcan_neuron_recorder.get_neuron_sampling_interval(
             IHCANMachineVertex.SPIKES, self._ihcan_vertices[0],
             local_time_period_map)
@@ -1028,6 +1033,10 @@ class SpiNNakEarApplicationVertex(
     @overrides(AbstractNeuronRecordable.get_neuron_sampling_interval)
     def get_neuron_sampling_interval(
             self, variable, graph_mapper, local_time_period_map):
+        if graph_mapper is None or local_time_period_map is None:
+            return self.my_variable_local_time_period(
+                get_simulator().default_machine_time_step, variable)
+
         if variable == DRNLMachineVertex.MOC:
             return self._drnl_neuron_recorder.get_neuron_sampling_interval(
                 variable, self._drnl_vertices[0], local_time_period_map)
